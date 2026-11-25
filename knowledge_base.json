@@ -1,0 +1,302 @@
+{
+  "version": "1.0.0",
+  "last_updated": "2026-11-25",
+  "fallback_event": {
+    "category": "Geral",
+    "severity": "medium",
+    "friendly_title": "Evento de sistema ou aplicativo não catalogado",
+    "what_happened": "O Windows registrou um alerta ou erro técnico que ainda não possui uma tradução específica na base local.",
+    "probable_causes": [
+      "Falha pontual em um serviço de terceiros.",
+      "Atualização recente do Windows ou de algum software."
+    ],
+    "solutions": [
+      "Verifique os detalhes técnicos brutos do log.",
+      "Observe se o erro se repete no mesmo horário em que o computador apresenta lentidão."
+    ]
+  },
+  "events": [
+    {
+      "id": "APP_1000",
+      "category": "Aplicativos",
+      "log_name": "Application",
+      "sources": ["Application Error"],
+      "event_id": 1000,
+      "severity": "high",
+      "friendly_title": "Um programa fechou sozinho por falha interna (Crash)",
+      "what_happened": "O aplicativo encontrou um erro grave de código ou tentou acessar uma área inválida da memória e foi encerrado imediatamente pelo Windows.",
+      "probable_causes": [
+        "Bug no próprio programa ou plugin/extensão defeituosa.",
+        "Arquivos do programa corrompidos.",
+        "Conflito com drivers da placa de vídeo (muito comum em jogos e navegadores).",
+        "Falta de bibliotecas do sistema (como Visual C++ Redistributable ou .NET)."
+      ],
+      "solutions": [
+        "Verifique o nome do 'Aplicativo com falha' e do 'Módulo com falha' nos detalhes do log.",
+        "Atualize o programa para a versão mais recente ou reinstale-o.",
+        "Se o módulo com falha mencionar arquivos da placa de vídeo (ex: nvlddmkm.dll, amdkmdag.sys), atualize o driver de vídeo."
+      ]
+    },
+    {
+      "id": "APP_1002",
+      "category": "Aplicativos",
+      "log_name": "Application",
+      "sources": ["Application Hang"],
+      "event_id": 1002,
+      "severity": "medium",
+      "friendly_title": "Um programa congelou e parou de responder",
+      "what_happened": "O aplicativo ficou preso aguardando uma resposta do processador, do disco ou da rede e parou de atualizar sua janela na tela.",
+      "probable_causes": [
+        "Gargalo momentâneo de 100% de uso de Disco (HD/SSD) ou CPU.",
+        "O programa tentou abrir um arquivo muito pesado ou acessar uma pasta na rede que caiu.",
+        "Falta de memória RAM disponível no momento."
+      ],
+      "solutions": [
+        "Verifique na linha do tempo do app se houve pico de Disco ou RAM segundos antes deste horário.",
+        "Evite abrir múltiplas tarefas pesadas simultaneamente enquanto o disco estiver ocupado.",
+        "Se ocorrer sempre no mesmo programa, limpe o cache dele ou verifique se há atualizações."
+      ]
+    },
+    {
+      "id": "SYS_41",
+      "category": "Sistema e Energia",
+      "log_name": "System",
+      "sources": ["Microsoft-Windows-Kernel-Power"],
+      "event_id": 41,
+      "severity": "critical",
+      "friendly_title": "O computador desligou ou reiniciou de forma inesperada",
+      "what_happened": "O Windows perdeu energia ou travou completamente (tela azul/congelamento total) sem passar pelo processo normal de desligamento.",
+      "probable_causes": [
+        "Queda de energia ou cabo da fonte com mau contato.",
+        "Você segurou o botão Power para forçar o desligamento após o PC congelar.",
+        "Superaquecimento crítico do processador (desligamento de proteção).",
+        "Fonte de alimentação (PSU) defeituosa ou não suportando a carga da placa de vídeo.",
+        "Instabilidade de overclock ou memória RAM com defeito."
+      ],
+      "solutions": [
+        "Monitore as temperaturas da CPU e GPU sob carga.",
+        "Verifique se há logs de 'BugCheck' (Tela Azul) segundos antes deste evento.",
+        "Desative perfis de overclock (XMP/DOCP) temporariamente para testar a estabilidade.",
+        "Verifique os cabos de força e a saúde da fonte de alimentação."
+      ]
+    },
+    {
+      "id": "SYS_6008",
+      "category": "Sistema e Energia",
+      "log_name": "System",
+      "sources": ["EventLog"],
+      "event_id": 6008,
+      "severity": "high",
+      "friendly_title": "Registro de desligamento anterior inesperado",
+      "what_happened": "Assim que o Windows ligou novamente, ele detectou que a sessão anterior não foi encerrada corretamente.",
+      "probable_causes": [
+        "Consequência direta de uma falta de luz, tela azul (BSOD) ou travamento total (Evento 41)."
+      ],
+      "solutions": [
+        "Olhe os eventos registrados imediatamente antes do horário informado na descrição deste log para descobrir a causa raiz do travamento."
+      ]
+    },
+    {
+      "id": "SYS_1001_BSOD",
+      "category": "Sistema e Energia",
+      "log_name": "System",
+      "sources": ["Microsoft-Windows-WER-SystemErrorReporting", "BugCheck"],
+      "event_id": 1001,
+      "severity": "critical",
+      "friendly_title": "O Windows sofreu uma Tela Azul da Morte (BSOD)",
+      "what_happened": "O núcleo (Kernel) do Windows encontrou um erro fatal e paralisou o sistema para evitar danos aos dados ou ao hardware.",
+      "probable_causes": [
+        "Driver incompatível, corrompido ou desatualizado.",
+        "Defeito físico na memória RAM ou no SSD/HD.",
+        "Conflito gerado por sistemas anti-cheat de jogos ou antivírus."
+      ],
+      "solutions": [
+        "Anote o código de parada (Stop Code, ex: MEMORY_MANAGEMENT, VIDEO_TDR_FAILURE) exibido nos detalhes do evento.",
+        "Execute o comando 'sfc /scannow' no Prompt de Comando como Administrador.",
+        "Atualize os drivers do chipset, vídeo e rede."
+      ]
+    },
+    {
+      "id": "DISK_129",
+      "category": "Disco (HD / SSD)",
+      "log_name": "System",
+      "sources": ["storahci", "nvme", "iaStorA", "iaStorAC"],
+      "event_id": 129,
+      "severity": "critical",
+      "friendly_title": "O HD ou SSD travou e precisou ser reiniciado (Pico de 100% de Disco)",
+      "what_happened": "O controlador do Windows enviou um comando para o disco, mas ele demorou tanto para responder que o sistema precisou resetar a comunicação, congelando o PC por alguns segundos.",
+      "probable_causes": [
+        "SSD ou HD chegando ao fim da vida útil ou superaquecendo.",
+        "Cabo SATA frouxo, dobrado ou defeituoso (em PCs de mesa).",
+        "Modo de economia de energia PCIe/SATA desligando o disco agressivamente.",
+        "Driver da controladora SATA/NVMe desatualizado."
+      ],
+      "solutions": [
+        "Verifique a saúde do disco usando ferramentas S.M.A.R.T. (como CrystalDiskInfo).",
+        "Em desktops, reconecte ou troque o cabo SATA e mude a porta na placa-mãe.",
+        "Nas Opções de Energia do Windows, desative o 'Gerenciamento de Energia do Estado da Conexão PCI Express'."
+      ]
+    },
+    {
+      "id": "DISK_153",
+      "category": "Disco (HD / SSD)",
+      "log_name": "System",
+      "sources": ["disk"],
+      "event_id": 153,
+      "severity": "high",
+      "friendly_title": "Lentidão severa na leitura ou gravação do disco",
+      "what_happened": "Uma operação de leitura ou escrita no disco falhou na primeira tentativa e precisou ser repetida, causando engasgos e 100% de uso de disco.",
+      "probable_causes": [
+        "Setores defeituosos (Bad Blocks) no HD ou células desgastadas no SSD.",
+        "Sobrecarga extrema de gravação (ex: atualização do Windows + download pesado ao mesmo tempo em um HD mecânico).",
+        "Problema de alimentação elétrica no disco."
+      ],
+      "solutions": [
+        "Faça backup imediato dos seus arquivos importantes por precaução.",
+        "Execute uma verificação de disco abrindo o terminal como Administrador e digitando: chkdsk /f /r",
+        "Se você ainda usa o Windows instalado em um HD mecânico, considere migrar o sistema para um SSD."
+      ]
+    },
+    {
+      "id": "DISK_7_51",
+      "category": "Disco (HD / SSD)",
+      "log_name": "System",
+      "sources": ["disk"],
+      "event_id": 7,
+      "severity": "critical",
+      "friendly_title": "Bloco defeituoso (Bad Block) detectado no disco",
+      "what_happened": "O Windows tentou ler ou gravar dados em uma parte física do disco que está danificada.",
+      "probable_causes": [
+        "Desgaste físico ou dano mecânico no HD/SSD.",
+        "Quedas de energia bruscas durante gravações."
+      ],
+      "solutions": [
+        "Faça backup urgente de todos os arquivos pessoais.",
+        "Rode o comando 'chkdsk /r' para isolar os setores danificados.",
+        "Planeje a substituição da unidade de armazenamento."
+      ]
+    },
+    {
+      "id": "DISK_55_NTFS",
+      "category": "Disco (HD / SSD)",
+      "log_name": "System",
+      "sources": ["Ntfs", "Microsoft-Windows-Ntfs"],
+      "event_id": 55,
+      "severity": "high",
+      "friendly_title": "Estrutura de arquivos corrompida no disco",
+      "what_happened": "O sistema de arquivos NTFS detectou uma inconsistência na organização das pastas ou arquivos.",
+      "probable_causes": [
+        "Desligamento forçado ou queda de luz enquanto arquivos eram salvos.",
+        "Remoção de pendrive ou HD externo sem ejetar com segurança.",
+        "Falha iminente no disco."
+      ],
+      "solutions": [
+        "Reinicie o computador para permitir que o Windows repare a unidade.",
+        "Execute o comando 'chkdsk C: /f' no Prompt de Comando como Administrador."
+      ]
+    },
+    {
+      "id": "RAM_2004",
+      "category": "Memória RAM",
+      "log_name": "System",
+      "sources": ["Microsoft-Windows-Resource-Exhaustion-Detector"],
+      "event_id": 2004,
+      "severity": "high",
+      "friendly_title": "Memória RAM esgotada (Sistema sem memória virtual)",
+      "what_happened": "O consumo de memória atingiu o limite máximo da RAM física e do arquivo de paginação, fazendo o Windows fechar programas à força para não travar.",
+      "probable_causes": [
+        "Muitos programas ou abas do navegador abertos ao mesmo tempo.",
+        "Vazamento de memória (Memory Leak) em algum aplicativo ou driver.",
+        "Arquivo de paginação (Memória Virtual) desativado ou sem espaço livre no disco C:."
+      ],
+      "solutions": [
+        "Abra os detalhes deste log: o próprio Windows lista os 3 programas que mais estavam consumindo RAM na hora.",
+        "Feche aplicativos em segundo plano desnecessários.",
+        "Certifique-se de que há pelo menos 15% de espaço livre no disco C: para a memória virtual funcionar."
+      ]
+    },
+    {
+      "id": "CPU_37",
+      "category": "Processador (CPU)",
+      "log_name": "System",
+      "sources": ["Microsoft-Windows-Kernel-Processor-Power"],
+      "event_id": 37,
+      "severity": "high",
+      "friendly_title": "Velocidade do processador reduzida à força (Thermal Throttling)",
+      "what_happened": "O firmware da placa-mãe limitou a velocidade (clock) da CPU, fazendo o computador ficar extremamente lento e travando tarefas simples.",
+      "probable_causes": [
+        "Superaquecimento do processador (cooler sujo, pasta térmica seca ou má ventilação).",
+        "Notebook rodando na bateria em modo de economia extrema.",
+        "Carregador de notebook com potência insuficiente ou defeituoso."
+      ],
+      "solutions": [
+        "Verifique a temperatura da CPU imediatamente (acima de 90°C indica problema de refrigeração).",
+        "Limpe a poeira das saídas de ar e ventoinhas.",
+        "Em notebooks, conecte o carregador original na tomada e selecione o plano de energia 'Equilibrado' ou 'Alto Desempenho'."
+      ]
+    },
+    {
+      "id": "NET_1014",
+      "category": "Rede e Internet",
+      "log_name": "System",
+      "sources": ["Microsoft-Windows-DNS-Client"],
+      "event_id": 1014,
+      "severity": "medium",
+      "friendly_title": "Falha ou lentidão extrema ao resolver endereços da internet (DNS)",
+      "what_happened": "O Windows tentou acessar um site ou servidor, mas o servidor DNS demorou demais para responder.",
+      "probable_causes": [
+        "Oscilação ou queda momentânea da conexão com a internet.",
+        "Roteador congestionado ou travando.",
+        "Servidor DNS da operadora instável ou lento.",
+        "VPN ou proxy bloqueando o tráfego."
+      ],
+      "solutions": [
+        "Reinicie o modem/roteador da internet.",
+        "Altere o DNS do Windows para um serviço mais rápido e estável (ex: Cloudflare 1.1.1.1 ou Google 8.8.8.8).",
+        "Limpe o cache DNS executando 'ipconfig /flushdns' no terminal."
+      ]
+    },
+    {
+      "id": "NET_27_LINK",
+      "category": "Rede e Internet",
+      "log_name": "System",
+      "sources": ["e1dexpress", "e1rexpress", "rt640x64", "Netwtw08", "Netwtw10", "Netwtw12", "Netwtw14"],
+      "event_id": 27,
+      "severity": "medium",
+      "friendly_title": "A placa de rede ou Wi-Fi perdeu a conexão física",
+      "what_happened": "O adaptador de rede foi desconectado da rede local ou do roteador.",
+      "probable_causes": [
+        "Cabo de rede com mau contato ou desconectado.",
+        "Sinal Wi-Fi muito fraco ou interferência.",
+        "O Windows desligou a placa de rede para economizar energia.",
+        "Driver da placa de rede desatualizado."
+      ],
+      "solutions": [
+        "No Gerenciador de Dispositivos, abra as propriedades da placa de rede, vá em 'Gerenciamento de Energia' e desmarque 'O computador pode desligar o dispositivo para economizar energia'.",
+        "Verifique o cabo de rede ou aproxime-se do roteador Wi-Fi.",
+        "Atualize o driver do adaptador de rede."
+      ]
+    },
+    {
+      "id": "GPU_4101",
+      "category": "Placa de Vídeo (GPU)",
+      "log_name": "System",
+      "sources": ["Display"],
+      "event_id": 4101,
+      "severity": "high",
+      "friendly_title": "O driver de vídeo parou de responder e se recuperou (TDR)",
+      "what_happened": "A placa de vídeo travou por mais de 2 segundos (tela piscou em preto) e o Windows reiniciou o driver para evitar uma tela azul.",
+      "probable_causes": [
+        "Driver da placa de vídeo corrompido ou desatualizado.",
+        "Superaquecimento ou overclock instável na placa de vídeo.",
+        "Jogo ou programa gráfico exigindo mais memória de vídeo (VRAM) do que a placa possui.",
+        "Cabo de alimentação da placa de vídeo frouxo."
+      ],
+      "solutions": [
+        "Use o utilitário DDU (Display Driver Uninstaller) em Modo de Segurança para remover o driver atual e instale uma versão limpa.",
+        "Monitore a temperatura da placa de vídeo durante jogos ou renderizações.",
+        "Reduza as configurações gráficas de texturas para aliviar o uso de VRAM."
+      ]
+    }
+  ]
+}

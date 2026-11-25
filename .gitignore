@@ -1,0 +1,27 @@
+# Rust / Cargo / Tauri
+target/
+src-tauri/target/
+src-tauri/gen/
+
+# Frontend / Bun / Vite / PWA
+node_modules/
+dist/
+dev-dist/
+
+# WebAssembly build output
+crates/sentinel-wasm/pkg/
+src/wasm/pkg/
+
+# SQLite databases
+*.db
+*.db-wal
+*.db-shm
+*.sqlite*
+
+# Tests / Reports / Env / OS
+playwright-report/
+test-results/
+graphify-out/
+.env*
+.DS_Store
+Thumbs.db
