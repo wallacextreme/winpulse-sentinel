@@ -7,12 +7,16 @@ use rusqlite::{params, Connection, OptionalExtension};
 use crate::error::SentinelError;
 use crate::eventlog::xpath::extract_event_data_summary;
 use crate::models::{
-    BottleneckSnapshot, IncidentDetail, NewBottleneckSnapshot, NewWindowsEvent, OffendingProcess,
-    Severity, TimelineItem, TimelineItemType, ViolatedMetric, WindowsEventRecord,
+    AiDiagnosisResponse, BottleneckSnapshot, CommandAuditEntry, CommandAuditStatus,
+    CommandRiskLevel, CommandShell, CommandSource, IncidentDetail, NewBottleneckSnapshot,
+    NewWindowsEvent, OffendingProcess, Severity, StagedCommandTicket, TimelineItem,
+    TimelineItemType, ViolatedMetric, WindowsEventRecord,
 };
 
 pub const INITIAL_MIGRATION_SQL: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../migrations/001_init.sql"));
+pub const AI_AUDIT_MIGRATION_SQL: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../migrations/002_ai_and_audit.sql"));
 
 #[derive(Clone)]
 pub struct Database {
@@ -47,6 +51,11 @@ impl Database {
         conn.execute(
             "INSERT OR IGNORE INTO schema_migrations (version, name, applied_at_ms) VALUES (?1, ?2, ?3)",
             params![1_i64, "001_init", now_ms],
+        )?;
+        conn.execute_batch(AI_AUDIT_MIGRATION_SQL)?;
+        conn.execute(
+            "INSERT OR IGNORE INTO schema_migrations (version, name, applied_at_ms) VALUES (?1, ?2, ?3)",
+            params![2_i64, "002_ai_and_audit", now_ms],
         )?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -584,6 +593,147 @@ impl Database {
         let count: i64 =
             conn.query_row("SELECT COUNT(*) FROM windows_events", [], |row| row.get(0))?;
         Ok(count > 0)
+    }
+
+    pub fn save_ai_diagnosis(
+        &self,
+        target_uid: &str,
+        provider_kind: &str,
+        model_name: &str,
+        response: &AiDiagnosisResponse,
+    ) -> Result<(), SentinelError> {
+        let conn = self.lock_conn()?;
+        let response_json = serde_json::to_string(response)?;
+        let now_ms = Utc::now().timestamp_millis();
+        conn.execute(
+            "INSERT INTO ai_diagnoses (target_uid, provider_kind, model_name, response_json, created_at_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![target_uid, provider_kind, model_name, response_json, now_ms],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_latest_ai_diagnosis(
+        &self,
+        target_uid: &str,
+    ) -> Result<Option<AiDiagnosisResponse>, SentinelError> {
+        let conn = self.lock_conn()?;
+        let raw: Option<String> = conn
+            .query_row(
+                "SELECT response_json FROM ai_diagnoses
+                 WHERE target_uid = ?1
+                 ORDER BY created_at_ms DESC, id DESC
+                 LIMIT 1",
+                params![target_uid],
+                |row| row.get(0),
+            )
+            .optional()?;
+        match raw {
+            Some(json) => Ok(Some(serde_json::from_str(&json)?)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn insert_command_audit_pending(
+        &self,
+        ticket: &StagedCommandTicket,
+    ) -> Result<(), SentinelError> {
+        let conn = self.lock_conn()?;
+        conn.execute(
+            "INSERT INTO command_audit_log (
+                approval_id, source, shell, command_text, rationale, risk_level,
+                requires_admin, status, created_at_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                ticket.approval_id,
+                ticket.source.as_str(),
+                ticket.shell.as_str(),
+                ticket.command,
+                ticket.rationale,
+                ticket.risk_level.as_str(),
+                i64::from(ticket.requires_admin),
+                CommandAuditStatus::Pending.as_str(),
+                ticket.created_at_ms,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_command_audit_status(
+        &self,
+        approval_id: &str,
+        status: CommandAuditStatus,
+        exit_code: Option<i32>,
+        stdout: &str,
+        stderr: &str,
+        duration_ms: Option<i64>,
+    ) -> Result<(), SentinelError> {
+        let conn = self.lock_conn()?;
+        let completed_at_ms = match status {
+            CommandAuditStatus::Pending | CommandAuditStatus::Running => None,
+            _ => Some(Utc::now().timestamp_millis()),
+        };
+        conn.execute(
+            "UPDATE command_audit_log
+             SET status = ?2,
+                 exit_code = ?3,
+                 stdout_text = ?4,
+                 stderr_text = ?5,
+                 duration_ms = ?6,
+                 completed_at_ms = COALESCE(?7, completed_at_ms)
+             WHERE approval_id = ?1",
+            params![
+                approval_id,
+                status.as_str(),
+                exit_code,
+                stdout,
+                stderr,
+                duration_ms,
+                completed_at_ms,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_command_audit_log(&self, limit: u32) -> Result<Vec<CommandAuditEntry>, SentinelError> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, approval_id, source, shell, command_text, rationale, risk_level,
+                    requires_admin, status, exit_code, stdout_text, stderr_text,
+                    duration_ms, created_at_ms, completed_at_ms
+             FROM command_audit_log
+             ORDER BY created_at_ms DESC, id DESC
+             LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![i64::from(limit.min(200))], |row| {
+            let source_str: String = row.get(2)?;
+            let shell_str: String = row.get(3)?;
+            let risk_str: String = row.get(6)?;
+            let req_admin: i64 = row.get(7)?;
+            let status_str: String = row.get(8)?;
+            Ok(CommandAuditEntry {
+                id: row.get(0)?,
+                approval_id: row.get(1)?,
+                source: CommandSource::from_str_lossy(&source_str),
+                shell: CommandShell::from_str_lossy(&shell_str),
+                command: row.get(4)?,
+                rationale: row.get(5)?,
+                risk_level: CommandRiskLevel::from_str_lossy(&risk_str),
+                requires_admin: req_admin != 0,
+                status: CommandAuditStatus::from_str_lossy(&status_str),
+                exit_code: row.get(9)?,
+                stdout: row.get(10)?,
+                stderr: row.get(11)?,
+                duration_ms: row.get(12)?,
+                created_at_ms: row.get(13)?,
+                completed_at_ms: row.get(14)?,
+            })
+        })?;
+        let mut entries = Vec::new();
+        for row in rows {
+            entries.push(row?);
+        }
+        Ok(entries)
     }
 
     fn row_to_snapshot(row: &rusqlite::Row<'_>) -> rusqlite::Result<BottleneckSnapshot> {

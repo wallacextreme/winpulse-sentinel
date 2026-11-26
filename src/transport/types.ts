@@ -1,10 +1,22 @@
 import type {
+  AiDiagnosisResponse,
+  AiSettings,
   BottleneckSnapshot,
   CollectorStatus,
+  CommandAuditEntry,
+  CommandExecutionResult,
+  CommandOutputEvent,
+  CommandShell,
+  CommandSource,
+  DiagnoseRequest,
   ImportHistoryResult,
   IncidentDetail,
   KnowledgeBaseEntry,
+  McpServerStatus,
+  OllamaProbeResult,
   RemoteServerStatus,
+  SaveAiSettingsInput,
+  StagedCommandTicket,
   TelemetrySample,
   TimelineItem,
   TimelineItemType,
@@ -36,11 +48,14 @@ export interface TransportEventHandlers {
   onStatus: (status: CollectorStatus) => void;
   onRemoteStatus?: (remoteStatus: RemoteServerStatus) => void;
   onHistoryImported?: (result: ImportHistoryResult) => void;
+  onApprovalRequested?: (ticket: StagedCommandTicket) => void;
+  onCommandOutput?: (event: CommandOutputEvent) => void;
   onConnectionStateChange: (state: ConnectionState) => void;
 }
 
 export interface SentinelTransport {
   readonly mode: TransportMode;
+  readonly supportsExecution: boolean;
   connect(handlers: TransportEventHandlers): Promise<void>;
   disconnect(): void;
   authenticateWithPin(pin: string, serverUrl?: string): Promise<void>;
@@ -63,6 +78,42 @@ export interface SentinelTransport {
     port?: number,
   ): Promise<RemoteServerStatus>;
   regenerateRemotePin(): Promise<RemoteServerStatus>;
+  getAiSettings(): Promise<AiSettings>;
+  saveAiSettings(input: SaveAiSettingsInput): Promise<AiSettings>;
+  setByokApiKey(apiKey: string): Promise<AiSettings>;
+  clearByokApiKey(): Promise<AiSettings>;
+  probeOllama(baseUrl?: string): Promise<OllamaProbeResult>;
+  previewSanitizedIncident(
+    itemType: TimelineItemType,
+    id: number,
+  ): Promise<DiagnoseRequest>;
+  analyzeIncidentWithAi(
+    itemType: TimelineItemType,
+    id: number,
+    executionFeedback?: string,
+  ): Promise<AiDiagnosisResponse>;
+  analyzeErrorTextWithAi(
+    errorText: string,
+    executionFeedback?: string,
+  ): Promise<AiDiagnosisResponse>;
+  stageCommandExecution(params: {
+    source: CommandSource;
+    shell: CommandShell;
+    command: string;
+    rationale: string;
+    requiresAdmin: boolean;
+  }): Promise<StagedCommandTicket>;
+  approveCommandExecution(
+    approvalId: string,
+    expectedCommand: string,
+    timeoutSecs?: number,
+  ): Promise<CommandExecutionResult>;
+  rejectCommandExecution(approvalId: string): Promise<void>;
+  cancelCommandExecution(approvalId: string): Promise<boolean>;
+  getCommandAuditLog(limit?: number): Promise<CommandAuditEntry[]>;
+  getMcpStatus(): Promise<McpServerStatus>;
+  toggleMcpServer(enabled: boolean, port?: number): Promise<McpServerStatus>;
+  rotateMcpToken(): Promise<McpServerStatus>;
 }
 
 export function isTauriRuntime(): boolean {

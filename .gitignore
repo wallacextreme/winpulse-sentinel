@@ -18,10 +18,17 @@ src/wasm/pkg/
 *.db-shm
 *.sqlite*
 
-# Tests / Reports / Env / OS
+# Tests / Reports / Env / OS / Local Tokens
 playwright-report/
 test-results/
 graphify-out/
+tasks/
 .env*
+.dev.vars
+.wrangler/
+proxy-worker/node_modules/
+*.token
+mcp_auth.token
+mcp_port.txt
 .DS_Store
 Thumbs.db

@@ -288,11 +288,48 @@ test.describe("WinPulse Sentinel PWA E2E", () => {
     await expect(result).toContainText("ucrtbase.dll");
     await expect(result).toContainText("sfc /scannow");
 
+    // Invariant: PWA LAN mode must NEVER expose command execution or AI settings controls
+    await expect(page.getByTestId("ai-mcp-btn")).toHaveCount(0);
+    await expect(page.getByTestId("fix-execute-cmd-btn")).toHaveCount(0);
+
     // Responsive check: zero horizontal overflow on desktop and mobile viewports
     const overflow = await page.evaluate(
       () =>
         document.documentElement.scrollWidth > window.innerWidth + 1,
     );
     expect(overflow).toBe(false);
+  });
+
+  test("supports AI diagnosis, human-in-the-loop command approval, and AI/MCP modal in demo mode", async ({
+    page,
+  }) => {
+    await page.goto("/?demo=1");
+
+    await expect(page.getByTestId("ai-mcp-btn")).toBeVisible();
+    await page.getByTestId("ai-mcp-btn").click();
+    const aiModal = page.getByTestId("ai-settings-modal");
+    await expect(aiModal).toBeVisible();
+    await expect(aiModal).toContainText("Nuvem Gratuita Padrão");
+    await aiModal.getByRole("button", { name: "Servidor MCP" }).click();
+    await expect(aiModal).toContainText("winpulse-mcp.exe");
+    await aiModal.getByRole("button", { name: "Fechar janela de IA e MCP" }).click();
+    await expect(aiModal).toBeHidden();
+
+    // Open an incident and run AI diagnosis -> stage -> approve command
+    await page.getByTestId("timeline-item").first().click();
+    const drawer = page.getByTestId("diagnostic-drawer");
+    await expect(drawer).toBeVisible();
+    await page.getByTestId("analyze-incident-ai-btn").click();
+    await expect(page.getByTestId("drawer-ai-result")).toBeVisible();
+    await page.getByTestId("execute-ai-cmd-btn").first().click();
+
+    const approvalModal = page.getByTestId("command-approval-modal");
+    await expect(approvalModal).toBeVisible();
+    await expect(page.getByTestId("approval-command-preview")).toBeVisible();
+    await page.getByTestId("approve-command-btn").click();
+    await expect(page.getByTestId("command-terminal-output")).toContainText(
+      "WinPulse Executor",
+    );
+    await expect(approvalModal).toContainText("Exit code: 0");
   });
 });

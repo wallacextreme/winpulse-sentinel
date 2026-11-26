@@ -8,16 +8,29 @@ import {
   type TransportMode,
 } from "../transport";
 import type {
+  AiDiagnosisResponse,
+  AiSettings,
   BottleneckSnapshot,
   CollectorStatus,
+  CommandAuditEntry,
+  CommandAuditStatus,
+  CommandExecutionResult,
+  CommandShell,
+  CommandSource,
+  DiagnoseRequest,
   IncidentDetail,
   IncidentFacetCounts,
   IncidentFilterQuery,
   KnowledgeBaseEntry,
+  McpServerStatus,
+  OllamaProbeResult,
   RemoteServerStatus,
+  SaveAiSettingsInput,
   Severity,
+  StagedCommandTicket,
   TelemetrySample,
   TimelineItem,
+  TimelineItemType,
   WindowsEventRecord,
 } from "../types/sentinel";
 import {
@@ -166,6 +179,26 @@ export function useSentinelStore() {
     null,
   );
 
+  const [aiModalOpen, setAiModalOpen] = useState(false);
+  const [aiSettings, setAiSettings] = useState<AiSettings | null>(null);
+  const [ollamaProbe, setOllamaProbe] = useState<OllamaProbeResult | null>(null);
+  const [mcpStatus, setMcpStatus] = useState<McpServerStatus | null>(null);
+  const [auditLog, setAuditLog] = useState<CommandAuditEntry[]>([]);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiQuotaExhausted, setAiQuotaExhausted] = useState(false);
+  const [aiDiagnosis, setAiDiagnosis] = useState<AiDiagnosisResponse | null>(null);
+  const [sanitizedPreview, setSanitizedPreview] = useState<DiagnoseRequest | null>(null);
+
+  const [activeTicket, setActiveTicket] = useState<StagedCommandTicket | null>(null);
+  const [commandStatus, setCommandStatus] = useState<CommandAuditStatus | null>(null);
+  const [commandOutput, setCommandOutput] = useState("");
+  const [commandBusy, setCommandBusy] = useState(false);
+  const [commandResult, setCommandResult] = useState<CommandExecutionResult | null>(null);
+  const [commandError, setCommandError] = useState<string | null>(null);
+  const activeTicketIdRef = useRef<string | null>(null);
+  activeTicketIdRef.current = activeTicket?.approvalId ?? null;
+
   const pushToast = useCallback(
     (title: string, body: string, severity: Severity, targetItem?: TimelineItem) => {
       const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -249,6 +282,18 @@ export function useSentinelStore() {
       if (transport.mode === "tauri") {
         const remote = await transport.getRemoteServerStatus();
         setRemoteStatus(remote);
+      }
+      if (transport.supportsExecution) {
+        const [aiCfg, mcp, audit, ollama] = await Promise.all([
+          transport.getAiSettings().catch(() => null),
+          transport.getMcpStatus().catch(() => null),
+          transport.getCommandAuditLog(30).catch(() => [] as CommandAuditEntry[]),
+          transport.probeOllama().catch(() => null),
+        ]);
+        if (aiCfg) setAiSettings(aiCfg);
+        if (mcp) setMcpStatus(mcp);
+        setAuditLog(audit);
+        if (ollama) setOllamaProbe(ollama);
       }
     } catch {
       // Handled by connectionState or auth_required flow.
@@ -384,6 +429,25 @@ export function useSentinelStore() {
           void hydrateData();
         }
       },
+      onApprovalRequested: (ticket) => {
+        setActiveTicket(ticket);
+        setCommandStatus("pending");
+        setCommandOutput("");
+        setCommandResult(null);
+        setCommandError(null);
+        setCommandBusy(false);
+      },
+      onCommandOutput: (ev) => {
+        if (activeTicketIdRef.current && ev.approvalId !== activeTicketIdRef.current) {
+          return;
+        }
+        if (ev.chunk) {
+          setCommandOutput((prev) => prev + ev.chunk);
+        }
+        if (ev.finished) {
+          setCommandStatus(ev.status);
+        }
+      },
     });
 
     return () => {
@@ -415,6 +479,10 @@ export function useSentinelStore() {
       setDetailLoading(true);
       setDetailError(null);
       setSelectedDetail(null);
+      setAiDiagnosis(null);
+      setAiError(null);
+      setAiQuotaExhausted(false);
+      setSanitizedPreview(null);
 
       try {
         const detail = await transport.getIncidentDetail(
@@ -447,7 +515,198 @@ export function useSentinelStore() {
     setSelectedItem(null);
     setSelectedDetail(null);
     setDetailError(null);
+    setAiDiagnosis(null);
+    setAiError(null);
+    setAiQuotaExhausted(false);
+    setSanitizedPreview(null);
   }, []);
+
+  const refreshAiContext = useCallback(async () => {
+    if (!transport.supportsExecution) return;
+    const [aiCfg, mcp, audit, ollama] = await Promise.all([
+      transport.getAiSettings().catch(() => null),
+      transport.getMcpStatus().catch(() => null),
+      transport.getCommandAuditLog(30).catch(() => [] as CommandAuditEntry[]),
+      transport.probeOllama().catch(() => null),
+    ]);
+    if (aiCfg) setAiSettings(aiCfg);
+    if (mcp) setMcpStatus(mcp);
+    setAuditLog(audit);
+    if (ollama) setOllamaProbe(ollama);
+  }, [transport]);
+
+  const saveAiSettings = useCallback(
+    async (input: SaveAiSettingsInput) => {
+      const updated = await transport.saveAiSettings(input);
+      setAiSettings(updated);
+      return updated;
+    },
+    [transport],
+  );
+
+  const saveByokApiKey = useCallback(
+    async (apiKey: string) => {
+      const updated = await transport.setByokApiKey(apiKey);
+      setAiSettings(updated);
+      return updated;
+    },
+    [transport],
+  );
+
+  const clearByokApiKey = useCallback(async () => {
+    const updated = await transport.clearByokApiKey();
+    setAiSettings(updated);
+    return updated;
+  }, [transport]);
+
+  const refreshOllamaProbe = useCallback(
+    async (baseUrl?: string) => {
+      const res = await transport.probeOllama(baseUrl);
+      setOllamaProbe(res);
+      return res;
+    },
+    [transport],
+  );
+
+  const toggleMcpServer = useCallback(
+    async (enabled: boolean, port?: number) => {
+      const updated = await transport.toggleMcpServer(enabled, port);
+      setMcpStatus(updated);
+      return updated;
+    },
+    [transport],
+  );
+
+  const rotateMcpToken = useCallback(async () => {
+    const updated = await transport.rotateMcpToken();
+    setMcpStatus(updated);
+    return updated;
+  }, [transport]);
+
+  const loadSanitizedPreview = useCallback(
+    async (itemType: TimelineItemType, id: number) => {
+      const preview = await transport.previewSanitizedIncident(itemType, id);
+      setSanitizedPreview(preview);
+      return preview;
+    },
+    [transport],
+  );
+
+  const analyzeSelectedIncident = useCallback(
+    async (executionFeedback?: string) => {
+      if (!selectedItem) return null;
+      setAiBusy(true);
+      setAiError(null);
+      setAiQuotaExhausted(false);
+      try {
+        const res = await transport.analyzeIncidentWithAi(
+          selectedItem.itemType,
+          selectedItem.sourceId,
+          executionFeedback,
+        );
+        setAiDiagnosis(res);
+        return res;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setAiError(msg);
+        if (
+          msg.toLowerCase().includes("cota") ||
+          msg.toLowerCase().includes("quota") ||
+          msg.toLowerCase().includes("limite")
+        ) {
+          setAiQuotaExhausted(true);
+        }
+        return null;
+      } finally {
+        setAiBusy(false);
+      }
+    },
+    [selectedItem, transport],
+  );
+
+  const analyzeErrorText = useCallback(
+    async (errorText: string, executionFeedback?: string) => {
+      return transport.analyzeErrorTextWithAi(errorText, executionFeedback);
+    },
+    [transport],
+  );
+
+  const requestCommandExecution = useCallback(
+    async (params: {
+      source: CommandSource;
+      shell: CommandShell;
+      command: string;
+      rationale: string;
+      requiresAdmin: boolean;
+    }) => {
+      setCommandError(null);
+      setCommandResult(null);
+      setCommandOutput("");
+      const ticket = await transport.stageCommandExecution(params);
+      setActiveTicket(ticket);
+      setCommandStatus("pending");
+      return ticket;
+    },
+    [transport],
+  );
+
+  const approveActiveCommand = useCallback(async () => {
+    if (!activeTicket) return null;
+    setCommandBusy(true);
+    setCommandError(null);
+    setCommandStatus("running");
+    setCommandOutput("");
+    try {
+      const res = await transport.approveCommandExecution(
+        activeTicket.approvalId,
+        activeTicket.command,
+      );
+      setCommandResult(res);
+      setCommandStatus(res.status);
+      if (res.stdout && !commandOutput) {
+        setCommandOutput(res.stdout + (res.stderr ? `\n${res.stderr}` : ""));
+      }
+      const log = await transport.getCommandAuditLog(30).catch(() => null);
+      if (log) setAuditLog(log);
+      return res;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setCommandError(msg);
+      setCommandStatus("failed");
+      return null;
+    } finally {
+      setCommandBusy(false);
+    }
+  }, [activeTicket, commandOutput, transport]);
+
+  const rejectActiveCommand = useCallback(async () => {
+    if (!activeTicket) return;
+    await transport.rejectCommandExecution(activeTicket.approvalId).catch(() => {});
+    setActiveTicket(null);
+    setCommandStatus(null);
+    setCommandOutput("");
+    setCommandResult(null);
+    setCommandError(null);
+    const log = await transport.getCommandAuditLog(30).catch(() => null);
+    if (log) setAuditLog(log);
+  }, [activeTicket, transport]);
+
+  const cancelActiveCommand = useCallback(async () => {
+    if (!activeTicket) return;
+    await transport.cancelCommandExecution(activeTicket.approvalId).catch(() => {});
+  }, [activeTicket, transport]);
+
+  const closeCommandModal = useCallback(() => {
+    if (commandBusy) return;
+    if (activeTicket && commandStatus === "pending") {
+      void transport.rejectCommandExecution(activeTicket.approvalId).catch(() => {});
+    }
+    setActiveTicket(null);
+    setCommandStatus(null);
+    setCommandOutput("");
+    setCommandResult(null);
+    setCommandError(null);
+  }, [activeTicket, commandBusy, commandStatus, transport]);
 
   const authenticateWithPin = useCallback(
     async (pin: string, serverUrl?: string) => {
@@ -573,5 +832,38 @@ export function useSentinelStore() {
     importingHistory,
     lastImportMessage,
     importHistory,
+    supportsExecution: transport.supportsExecution,
+    aiModalOpen,
+    setAiModalOpen,
+    aiSettings,
+    ollamaProbe,
+    mcpStatus,
+    auditLog,
+    aiBusy,
+    aiError,
+    aiQuotaExhausted,
+    aiDiagnosis,
+    sanitizedPreview,
+    refreshAiContext,
+    saveAiSettings,
+    saveByokApiKey,
+    clearByokApiKey,
+    refreshOllamaProbe,
+    toggleMcpServer,
+    rotateMcpToken,
+    loadSanitizedPreview,
+    analyzeSelectedIncident,
+    analyzeErrorText,
+    activeTicket,
+    commandStatus,
+    commandOutput,
+    commandBusy,
+    commandResult,
+    commandError,
+    requestCommandExecution,
+    approveActiveCommand,
+    rejectActiveCommand,
+    cancelActiveCommand,
+    closeCommandModal,
   };
 }

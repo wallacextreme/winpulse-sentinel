@@ -41,6 +41,12 @@ pub enum SentinelError {
     #[error("too many failed authentication attempts; try again later")]
     RateLimited,
 
+    #[error("shared quota exhausted: {0}")]
+    QuotaExhausted(String),
+
+    #[error("command blocked by safety policy: {0}")]
+    PolicyBlocked(String),
+
     #[error("internal error: {0}")]
     Internal(String),
 }
@@ -65,9 +71,9 @@ impl IntoResponse for SentinelError {
             Self::Unauthorized => StatusCode::UNAUTHORIZED,
             Self::Forbidden(_) => StatusCode::FORBIDDEN,
             Self::ServiceUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
-            Self::RateLimited => StatusCode::TOO_MANY_REQUESTS,
+            Self::RateLimited | Self::QuotaExhausted(_) => StatusCode::TOO_MANY_REQUESTS,
             Self::NotFound(_) => StatusCode::NOT_FOUND,
-            Self::InvalidInput(_) => StatusCode::BAD_REQUEST,
+            Self::InvalidInput(_) | Self::PolicyBlocked(_) => StatusCode::BAD_REQUEST,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
         let body = ErrorBody {

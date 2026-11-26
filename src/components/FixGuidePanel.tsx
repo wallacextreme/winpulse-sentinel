@@ -1,8 +1,11 @@
 import { useMemo, useState } from "react";
 import {
   BookOpen,
+  Bot,
   Check,
   Copy,
+  Loader2,
+  Play,
   Search,
   Sparkles,
   Terminal,
@@ -14,10 +17,29 @@ import {
   type FixCommand,
   type FixGuideEntry,
 } from "../data/fixCatalog";
-import type { KnowledgeBaseEntry, Severity } from "../types/sentinel";
+import type {
+  AiDiagnosisResponse,
+  CommandShell,
+  CommandSource,
+  KnowledgeBaseEntry,
+  Severity,
+} from "../types/sentinel";
 
 interface FixGuidePanelProps {
   knowledgeBase: KnowledgeBaseEntry[];
+  supportsExecution: boolean;
+  onAnalyzeTextWithAi: (
+    errorText: string,
+    executionFeedback?: string,
+  ) => Promise<AiDiagnosisResponse>;
+  onOpenAiSettings: () => void;
+  onExecuteCommand: (params: {
+    source: CommandSource;
+    shell: CommandShell;
+    command: string;
+    rationale: string;
+    requiresAdmin: boolean;
+  }) => Promise<void>;
 }
 
 const QUICK_EXAMPLES = [
@@ -62,44 +84,66 @@ function foldPt(text: string): string {
 function CommandChips({
   commands,
   copiedCmd,
+  supportsExecution,
   onCopy,
+  onExecute,
 }: {
   commands: FixCommand[];
   copiedCmd: string | null;
+  supportsExecution: boolean;
   onCopy: (cmd: string) => void;
+  onExecute: (item: FixCommand) => void;
 }) {
   if (commands.length === 0) return null;
   return (
     <div className="mt-3 flex flex-wrap gap-2">
       {commands.map((item) => (
-        <button
-          key={item.command}
-          type="button"
-          onClick={() => onCopy(item.command)}
-          className="inline-flex items-center gap-2 rounded-lg border border-slate-700/80 bg-[#05080f] px-2.5 py-1.5 text-left text-xs text-slate-200 transition hover:border-cyan-500/50 hover:bg-slate-900"
-          title={`Copiar comando: ${item.command}`}
-        >
-          <Terminal className="h-3.5 w-3.5 shrink-0 text-cyan-400" />
-          <code className="font-mono text-[11px] text-cyan-200">
-            {item.command}
-          </code>
-          {item.requiresAdmin && (
-            <span className="rounded bg-amber-500/15 px-1 py-0.5 text-[9px] font-semibold uppercase text-amber-300">
-              Admin
-            </span>
+        <div key={item.command} className="inline-flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => onCopy(item.command)}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-700/80 bg-[#05080f] px-2.5 py-1.5 text-left text-xs text-slate-200 transition hover:border-cyan-500/50 hover:bg-slate-900"
+            title={`Copiar comando: ${item.command}`}
+          >
+            <Terminal className="h-3.5 w-3.5 shrink-0 text-cyan-400" />
+            <code className="font-mono text-[11px] text-cyan-200">
+              {item.command}
+            </code>
+            {item.requiresAdmin && (
+              <span className="rounded bg-amber-500/15 px-1 py-0.5 text-[9px] font-semibold uppercase text-amber-300">
+                Admin
+              </span>
+            )}
+            {copiedCmd === item.command ? (
+              <Check className="h-3.5 w-3.5 text-emerald-400" />
+            ) : (
+              <Copy className="h-3.5 w-3 text-slate-500" />
+            )}
+          </button>
+          {supportsExecution && (
+            <button
+              type="button"
+              data-testid="fix-execute-cmd-btn"
+              onClick={() => onExecute(item)}
+              className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-2 py-1.5 text-[11px] font-semibold text-emerald-200 transition hover:bg-emerald-500/25"
+            >
+              <Play className="h-3 w-3" />
+              Executar
+            </button>
           )}
-          {copiedCmd === item.command ? (
-            <Check className="h-3.5 w-3.5 text-emerald-400" />
-          ) : (
-            <Copy className="h-3 w-3 text-slate-500" />
-          )}
-        </button>
+        </div>
       ))}
     </div>
   );
 }
 
-export function FixGuidePanel({ knowledgeBase }: FixGuidePanelProps) {
+export function FixGuidePanel({
+  knowledgeBase,
+  supportsExecution,
+  onAnalyzeTextWithAi,
+  onOpenAiSettings,
+  onExecuteCommand,
+}: FixGuidePanelProps) {
   const catalog = useMemo(
     () => buildUnifiedFixCatalog(knowledgeBase),
     [knowledgeBase],
@@ -110,6 +154,23 @@ export function FixGuidePanel({ knowledgeBase }: FixGuidePanelProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>("Todas");
   const [copiedCmd, setCopiedCmd] = useState<string | null>(null);
   const [checkedMap, setCheckedMap] = useState<Record<string, boolean>>({});
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiResult, setAiResult] = useState<AiDiagnosisResponse | null>(null);
+
+  const handleAnalyzeWithAi = async () => {
+    if (pastedError.trim().length < 3) return;
+    setAiBusy(true);
+    setAiError(null);
+    try {
+      const res = await onAnalyzeTextWithAi(pastedError.trim());
+      setAiResult(res);
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAiBusy(false);
+    }
+  };
 
   const diagnosis = useMemo(
     () => analyzeErrorInput(pastedError, catalog),
@@ -199,14 +260,110 @@ export function FixGuidePanel({ knowledgeBase }: FixGuidePanelProps) {
             {pastedError && (
               <button
                 type="button"
-                onClick={() => setPastedError("")}
+                onClick={() => {
+                  setPastedError("");
+                  setAiResult(null);
+                  setAiError(null);
+                }}
                 className="ml-auto text-[11px] text-slate-400 hover:text-slate-200"
               >
                 Limpar
               </button>
             )}
+            {supportsExecution && pastedError.trim().length >= 3 && (
+              <button
+                type="button"
+                data-testid="fix-analyze-ai-btn"
+                disabled={aiBusy}
+                onClick={() => void handleAnalyzeWithAi()}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/50 bg-cyan-500/15 px-3 py-1 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/25 disabled:opacity-50"
+              >
+                {aiBusy ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Bot className="h-3.5 w-3.5" />
+                )}
+                {aiBusy ? "Diagnosticando..." : "Diagnosticar com IA"}
+              </button>
+            )}
           </div>
         </div>
+
+        {aiError && (
+          <div className="mt-3 rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-200">
+            <p>{aiError}</p>
+            {(aiError.toLowerCase().includes("cota") ||
+              aiError.toLowerCase().includes("quota") ||
+              aiError.toLowerCase().includes("limite")) && (
+              <button
+                type="button"
+                onClick={onOpenAiSettings}
+                className="mt-2 rounded border border-cyan-500/40 bg-cyan-500/15 px-2.5 py-1 font-semibold text-cyan-200"
+              >
+                Configurar BYOK ou Ollama
+              </button>
+            )}
+          </div>
+        )}
+
+        {aiResult && (
+          <div
+            data-testid="fix-ai-result"
+            className="mt-4 rounded-xl border border-cyan-500/35 bg-cyan-950/15 p-4 text-xs"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-1.5 font-semibold text-cyan-200">
+                <Bot className="h-4 w-4 text-cyan-400" />
+                Diagnóstico por IA ({aiResult.modelUsed})
+              </span>
+              <span className="rounded border border-slate-700 bg-slate-900 px-2 py-0.5 uppercase text-slate-300">
+                {aiResult.confidence}
+              </span>
+            </div>
+            <p className="mt-2 text-sm font-medium text-slate-100">{aiResult.summary}</p>
+            <p className="mt-1 text-slate-300">
+              <strong>Causa provável:</strong> {aiResult.rootCause}
+            </p>
+            {aiResult.steps.length > 0 && (
+              <ol className="mt-2 list-decimal space-y-1 pl-4 text-slate-300">
+                {aiResult.steps.map((s, i) => (
+                  <li key={i}>{s}</li>
+                ))}
+              </ol>
+            )}
+            {aiResult.proposedCommands.length > 0 && (
+              <div className="mt-3 space-y-2">
+                {aiResult.proposedCommands.map((cmd, idx) => (
+                  <div
+                    key={`${cmd.command}-${idx}`}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-[#05080f] p-2.5"
+                  >
+                    <div>
+                      <p className="font-medium text-slate-200">{cmd.label}</p>
+                      <code className="font-mono text-[11px] text-cyan-300">{cmd.command}</code>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void onExecuteCommand({
+                          source: "ai",
+                          shell: cmd.shell,
+                          command: cmd.command,
+                          rationale: cmd.rationale,
+                          requiresAdmin: cmd.requiresAdmin,
+                        })
+                      }
+                      className="inline-flex items-center gap-1 rounded border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-1 font-semibold text-emerald-200 hover:bg-emerald-500/25"
+                    >
+                      <Play className="h-3 w-3" />
+                      Executar
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {diagnosis && (
           <div
@@ -298,8 +455,20 @@ export function FixGuidePanel({ knowledgeBase }: FixGuidePanelProps) {
                 <CommandChips
                   commands={diagnosis.commands}
                   copiedCmd={copiedCmd}
+                  supportsExecution={supportsExecution}
                   onCopy={(cmd) => {
                     void handleCopyCommand(cmd);
+                  }}
+                  onExecute={(cmdItem) => {
+                    void onExecuteCommand({
+                      source: "catalog",
+                      shell: cmdItem.command.trim().startsWith("Get-")
+                        ? "powershell"
+                        : "cmd",
+                      command: cmdItem.command,
+                      rationale: cmdItem.label,
+                      requiresAdmin: Boolean(cmdItem.requiresAdmin),
+                    });
                   }}
                 />
               </div>
@@ -407,8 +576,20 @@ export function FixGuidePanel({ knowledgeBase }: FixGuidePanelProps) {
                 <CommandChips
                   commands={entry.commands}
                   copiedCmd={copiedCmd}
+                  supportsExecution={supportsExecution}
                   onCopy={(cmd) => {
                     void handleCopyCommand(cmd);
+                  }}
+                  onExecute={(cmdItem) => {
+                    void onExecuteCommand({
+                      source: "catalog",
+                      shell: cmdItem.command.trim().startsWith("Get-")
+                        ? "powershell"
+                        : "cmd",
+                      command: cmdItem.command,
+                      rationale: cmdItem.label,
+                      requiresAdmin: Boolean(cmdItem.requiresAdmin),
+                    });
                   }}
                 />
               </article>

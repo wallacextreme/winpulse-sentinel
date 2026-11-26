@@ -1,5 +1,6 @@
 import {
   Activity,
+  Bot,
   Pause,
   Play,
   RefreshCw,
@@ -10,7 +11,7 @@ import {
   Wrench,
 } from "lucide-react";
 import type { ConnectionState, TransportMode } from "../transport";
-import type { CollectorStatus, HealthStatus } from "../types/sentinel";
+import type { AiProviderKind, CollectorStatus, HealthStatus } from "../types/sentinel";
 
 export type AppTab = "monitoring" | "fix-guide";
 
@@ -18,12 +19,15 @@ interface TopBarProps {
   activeTab: AppTab;
   onSelectTab: (tab: AppTab) => void;
   mode: TransportMode;
+  supportsExecution: boolean;
+  aiProvider?: AiProviderKind;
   wasmReady: boolean;
   connectionState: ConnectionState;
   collectorStatus: CollectorStatus | null;
   remoteEnabled: boolean;
   onTogglePause: () => void;
   onOpenRemoteModal: () => void;
+  onOpenAiModal: () => void;
   onRefresh: () => void;
 }
 
@@ -54,14 +58,23 @@ export function TopBar({
   activeTab,
   onSelectTab,
   mode,
+  supportsExecution,
+  aiProvider,
   wasmReady,
   connectionState,
   collectorStatus,
   remoteEnabled,
   onTogglePause,
   onOpenRemoteModal,
+  onOpenAiModal,
   onRefresh,
 }: TopBarProps) {
+  const aiLabel =
+    aiProvider === "gemini_byok"
+      ? "IA BYOK"
+      : aiProvider === "ollama_local"
+        ? "Ollama"
+        : "IA & MCP";
   const health = collectorStatus?.healthStatus ?? "stable";
   const badge = healthBadge(health);
   const paused = collectorStatus?.paused ?? false;
@@ -133,6 +146,18 @@ export function TopBar({
             <span className={`h-2 w-2 rounded-full ${badge.dot}`} />
             <span>Saúde: {badge.label}</span>
           </div>
+
+          {supportsExecution && (
+            <button
+              type="button"
+              data-testid="ai-mcp-btn"
+              onClick={onOpenAiModal}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-2.5 py-1.5 text-xs font-medium text-cyan-200 transition hover:bg-cyan-500/20"
+            >
+              <Bot className="h-3.5 w-3.5" />
+              <span>{aiLabel}</span>
+            </button>
+          )}
 
           {mode === "tauri" && (
             <>

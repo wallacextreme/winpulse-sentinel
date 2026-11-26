@@ -1012,4 +1012,45 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[tokio::test]
+    async fn lan_router_never_exposes_ai_or_command_execution_routes() {
+        let db = Database::open_in_memory().expect("db");
+        let rb = new_shared_ring_buffer();
+        let (state, pin) = make_test_state(db, rb);
+        let app = build_router(state, None);
+
+        let login_res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/auth/login")
+                    .header(CONTENT_TYPE, "application/json")
+                    .body(Body::from(format!(r#"{{"pin":"{pin}"}}"#)))
+                    .expect("req"),
+            )
+            .await
+            .expect("resp");
+        let bytes = login_res.into_body().collect().await.expect("body").to_bytes();
+        let parsed: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+        let token = parsed["token"].as_str().expect("token");
+
+        for uri in ["/api/ai/diagnose", "/api/commands/execute", "/mcp"] {
+            let res = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method(Method::POST)
+                        .uri(uri)
+                        .header(AUTHORIZATION, format!("Bearer {token}"))
+                        .header(CONTENT_TYPE, "application/json")
+                        .body(Body::from("{}"))
+                        .expect("req"),
+                )
+                .await
+                .expect("resp");
+            assert_eq!(res.status(), StatusCode::NOT_FOUND, "LAN route must not exist: {uri}");
+        }
+    }
 }

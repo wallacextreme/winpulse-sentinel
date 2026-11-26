@@ -1,13 +1,24 @@
 import rawKnowledgeBase from "../../knowledge_base.json";
 import type {
+  AiDiagnosisResponse,
+  AiSettings,
   BottleneckSnapshot,
   CollectorStatus,
+  CommandAuditEntry,
+  CommandExecutionResult,
+  CommandShell,
+  CommandSource,
+  DiagnoseRequest,
   ImportHistoryResult,
   IncidentDetail,
   KnowledgeBaseEntry,
+  McpServerStatus,
   OffendingProcess,
+  OllamaProbeResult,
   RemoteServerStatus,
+  SaveAiSettingsInput,
   Severity,
+  StagedCommandTicket,
   TelemetrySample,
   TimelineItem,
   TimelineItemType,
@@ -112,6 +123,7 @@ const DEMO_PROCESSES: OffendingProcess[] = [
 
 export class DemoTransport implements SentinelTransport {
   readonly mode = "demo" as const;
+  readonly supportsExecution = true;
   private handlers: TransportEventHandlers | null = null;
   private timerId: number | null = null;
   private tickCount = 0;
@@ -120,6 +132,24 @@ export class DemoTransport implements SentinelTransport {
   private remoteEnabled = true;
   private remotePin = "482910";
   private historyImported = false;
+  private aiSettings: AiSettings = {
+    provider: "cloud_proxy",
+    ollamaUrl: "http://127.0.0.1:11434",
+    ollamaModel: "",
+    hasByokKey: false,
+    maskedByokKey: null,
+    proxyUrl: "https://winpulse-ai-proxy.wallacedepaulosoares.workers.dev",
+  };
+  private mcpStatus: McpServerStatus = {
+    enabled: true,
+    port: 8421,
+    endpointUrl: "http://127.0.0.1:8421/mcp",
+    tokenPreview: "wp_m••••••••9f",
+    stdioBinaryName: "winpulse-mcp.exe",
+  };
+  private stagedTickets = new Map<string, StagedCommandTicket>();
+  private auditLog: CommandAuditEntry[] = [];
+  private nextAuditId = 1;
 
   private readonly kb: KnowledgeBaseEntry[] = loadKnowledgeBaseEntries();
   private telemetry: TelemetrySample[] = [];
@@ -600,5 +630,334 @@ export class DemoTransport implements SentinelTransport {
   async regenerateRemotePin(): Promise<RemoteServerStatus> {
     this.remotePin = String(Math.floor(100000 + Math.random() * 900000));
     return this.getRemoteServerStatus();
+  }
+
+  async getAiSettings(): Promise<AiSettings> {
+    return { ...this.aiSettings };
+  }
+
+  async saveAiSettings(input: SaveAiSettingsInput): Promise<AiSettings> {
+    this.aiSettings = {
+      ...this.aiSettings,
+      provider: input.provider,
+      ollamaUrl: input.ollamaUrl ?? this.aiSettings.ollamaUrl,
+      ollamaModel: input.ollamaModel ?? this.aiSettings.ollamaModel,
+    };
+    return { ...this.aiSettings };
+  }
+
+  async setByokApiKey(apiKey: string): Promise<AiSettings> {
+    const trimmed = apiKey.trim();
+    const masked =
+      trimmed.length <= 6
+        ? "••••••"
+        : `${trimmed.slice(0, 4)}••••••••${trimmed.slice(-2)}`;
+    this.aiSettings = {
+      ...this.aiSettings,
+      hasByokKey: true,
+      maskedByokKey: masked,
+    };
+    return { ...this.aiSettings };
+  }
+
+  async clearByokApiKey(): Promise<AiSettings> {
+    this.aiSettings = {
+      ...this.aiSettings,
+      hasByokKey: false,
+      maskedByokKey: null,
+    };
+    return { ...this.aiSettings };
+  }
+
+  async probeOllama(): Promise<OllamaProbeResult> {
+    return {
+      available: false,
+      baseUrl: this.aiSettings.ollamaUrl,
+      models: [],
+      selectedModel: null,
+      error: null,
+    };
+  }
+
+  async previewSanitizedIncident(
+    itemType: TimelineItemType,
+    id: number,
+  ): Promise<DiagnoseRequest> {
+    const detail = await this.getIncidentDetail(itemType, id);
+    return {
+      incidentSummary:
+        detail.event?.friendlyTitle ??
+        detail.diagnosticNote ??
+        `Snapshot #${id} de gargalo de hardware`,
+      eventId: detail.event?.eventId ?? null,
+      providerName: detail.event?.providerName ?? null,
+      channel: detail.event?.channel ?? null,
+      sanitizedXml: detail.event?.rawXml
+        ? detail.event.rawXml.replace(/Wallace/gi, "[USER]")
+        : null,
+      telemetryContext: "CPU 34.2%, RAM 94.5%, Disco 21.0% (8.4ms) [Sanitizado]",
+      executionFeedback: null,
+    };
+  }
+
+  async analyzeIncidentWithAi(
+    itemType: TimelineItemType,
+    id: number,
+    executionFeedback?: string,
+  ): Promise<AiDiagnosisResponse> {
+    const detail = await this.getIncidentDetail(itemType, id);
+    const title =
+      detail.event?.friendlyTitle ??
+      detail.diagnosticNote ??
+      `Gargalo de ${detail.snapshot?.violatedMetric ?? "sistema"}`;
+    return this.buildDemoDiagnosis(title, executionFeedback);
+  }
+
+  async analyzeErrorTextWithAi(
+    errorText: string,
+    executionFeedback?: string,
+  ): Promise<AiDiagnosisResponse> {
+    return this.buildDemoDiagnosis(errorText, executionFeedback);
+  }
+
+  private buildDemoDiagnosis(
+    context: string,
+    executionFeedback?: string,
+  ): AiDiagnosisResponse {
+    const lower = context.toLowerCase();
+    const isFeedback = Boolean(executionFeedback && executionFeedback.trim());
+    if (isFeedback) {
+      return {
+        summary:
+          "Saída do comando analisada com sucesso pela IA (Modo Demo Interativa).",
+        rootCause:
+          "Os arquivos e serviços verificados não apresentaram corrupção crítica pendente.",
+        confidence: "high",
+        steps: [
+          "Continue monitorando a linha do tempo do WinPulse Sentinel pelos próximos minutos.",
+          "Caso o erro persista no aplicativo específico, execute a reparação do pacote nas Configurações do Windows.",
+        ],
+        proposedCommands: [
+          {
+            label: "Consultar últimos 5 eventos críticos",
+            shell: "powershell",
+            command:
+              "Get-WinEvent -FilterHashtable @{LogName='System'; Level=1,2} -MaxEvents 5 | Format-Table TimeCreated, Id, ProviderName",
+            rationale: "Confirma se novos erros surgiram após a verificação.",
+            requiresAdmin: false,
+            riskLevel: "read_only",
+          },
+        ],
+        warnings: [],
+        modelUsed: "gemini-3.8-flash (demo)",
+        providerUsed: this.aiSettings.provider,
+      };
+    }
+
+    if (lower.includes("dns") || lower.includes("1014")) {
+      return {
+        summary: "Oscilação ou cache DNS desatualizado detectado no adaptador de rede.",
+        rootCause:
+          "O resolvedor DNS do Windows excedeu o tempo limite ao consultar o servidor configurado.",
+        confidence: "high",
+        steps: [
+          "Limpe o cache DNS local para descartar entradas obsoletas.",
+          "Teste a resolução de nomes e latência para 1.1.1.1.",
+        ],
+        proposedCommands: [
+          {
+            label: "Limpar cache DNS",
+            shell: "cmd",
+            command: "ipconfig /flushdns",
+            rationale: "Renova o cache local do resolvedor DNS sem reiniciar o PC.",
+            requiresAdmin: false,
+            riskLevel: "moderate",
+          },
+        ],
+        warnings: [],
+        modelUsed: "gemini-3.8-flash (demo)",
+        providerUsed: this.aiSettings.provider,
+      };
+    }
+
+    return {
+      summary:
+        "Correlação detectada entre falha de aplicativo/sistema e pressão momentânea de recursos.",
+      rootCause:
+        "Possível inconsistência de biblioteca de runtime (ucrtbase.dll / sistema) ou pico de contenção de memória/disco.",
+      confidence: "high",
+      steps: [
+        "Verifique a integridade dos arquivos protegidos do Windows via SFC.",
+        "Inspecione os eventos críticos recentes do System/Application para confirmar recorrência.",
+      ],
+      proposedCommands: [
+        {
+          label: "Verificar integridade do Windows (SFC)",
+          shell: "cmd",
+          command: "sfc /scannow",
+          rationale: "Verifica e repara DLLs protegidas do Windows.",
+          requiresAdmin: true,
+          riskLevel: "moderate",
+        },
+        {
+          label: "Listar últimos eventos de erro",
+          shell: "powershell",
+          command:
+            "Get-WinEvent -FilterHashtable @{LogName='Application'; Level=2} -MaxEvents 5",
+          rationale: "Comando somente leitura para confirmar módulos afetados.",
+          requiresAdmin: false,
+          riskLevel: "read_only",
+        },
+      ],
+      warnings: [
+        "Simulação interativa do modo Demo (nenhum comando real é executado no navegador).",
+      ],
+      modelUsed: "gemini-3.8-flash (demo)",
+      providerUsed: this.aiSettings.provider,
+    };
+  }
+
+  async stageCommandExecution(params: {
+    source: CommandSource;
+    shell: CommandShell;
+    command: string;
+    rationale: string;
+    requiresAdmin: boolean;
+  }): Promise<StagedCommandTicket> {
+    const now = Date.now();
+    const ticket: StagedCommandTicket = {
+      approvalId: `demo-${now}-${Math.random().toString(36).slice(2, 6)}`,
+      source: params.source,
+      shell: params.shell,
+      command: params.command.trim(),
+      rationale: params.rationale,
+      riskLevel: params.command.toLowerCase().startsWith("get-")
+        ? "read_only"
+        : "moderate",
+      requiresAdmin: params.requiresAdmin,
+      createdAtMs: now,
+      expiresAtMs: now + 300_000,
+    };
+    this.stagedTickets.set(ticket.approvalId, ticket);
+    return ticket;
+  }
+
+  async approveCommandExecution(
+    approvalId: string,
+    expectedCommand: string,
+  ): Promise<CommandExecutionResult> {
+    const ticket = this.stagedTickets.get(approvalId);
+    if (!ticket || ticket.command !== expectedCommand.trim()) {
+      throw new Error("Ticket de aprovação inválido ou divergente.");
+    }
+    this.stagedTickets.delete(approvalId);
+
+    const lines = [
+      `[WinPulse Executor · ${ticket.shell.toUpperCase()}] > ${ticket.command}\n`,
+      "Iniciando verificação segura com aprovação humana...\n",
+      "A Proteção de Recursos do Windows não encontrou violações de integridade (Demo).\n",
+    ];
+    let stdout = "";
+    for (const chunk of lines) {
+      stdout += chunk;
+      this.handlers?.onCommandOutput?.({
+        approvalId,
+        stream: "stdout",
+        chunk,
+        finished: false,
+        exitCode: null,
+        status: "running",
+      });
+    }
+    this.handlers?.onCommandOutput?.({
+      approvalId,
+      stream: "status",
+      chunk: "",
+      finished: true,
+      exitCode: 0,
+      status: "succeeded",
+    });
+
+    const result: CommandExecutionResult = {
+      approvalId,
+      status: "succeeded",
+      exitCode: 0,
+      stdout,
+      stderr: "",
+      durationMs: 320,
+      truncated: false,
+    };
+    this.auditLog.unshift({
+      id: this.nextAuditId++,
+      approvalId,
+      source: ticket.source,
+      shell: ticket.shell,
+      command: ticket.command,
+      rationale: ticket.rationale,
+      riskLevel: ticket.riskLevel,
+      requiresAdmin: ticket.requiresAdmin,
+      status: "succeeded",
+      exitCode: 0,
+      stdout,
+      stderr: "",
+      durationMs: 320,
+      createdAtMs: ticket.createdAtMs,
+      completedAtMs: Date.now(),
+    });
+    return result;
+  }
+
+  async rejectCommandExecution(approvalId: string): Promise<void> {
+    const ticket = this.stagedTickets.get(approvalId);
+    this.stagedTickets.delete(approvalId);
+    if (ticket) {
+      this.auditLog.unshift({
+        id: this.nextAuditId++,
+        approvalId,
+        source: ticket.source,
+        shell: ticket.shell,
+        command: ticket.command,
+        rationale: ticket.rationale,
+        riskLevel: ticket.riskLevel,
+        requiresAdmin: ticket.requiresAdmin,
+        status: "rejected",
+        exitCode: null,
+        stdout: "",
+        stderr: "Execução recusada pelo usuário.",
+        durationMs: 0,
+        createdAtMs: ticket.createdAtMs,
+        completedAtMs: Date.now(),
+      });
+    }
+  }
+
+  async cancelCommandExecution(): Promise<boolean> {
+    return false;
+  }
+
+  async getCommandAuditLog(limit = 50): Promise<CommandAuditEntry[]> {
+    return this.auditLog.slice(0, limit);
+  }
+
+  async getMcpStatus(): Promise<McpServerStatus> {
+    return { ...this.mcpStatus };
+  }
+
+  async toggleMcpServer(enabled: boolean, port?: number): Promise<McpServerStatus> {
+    this.mcpStatus = {
+      ...this.mcpStatus,
+      enabled,
+      port: port ?? this.mcpStatus.port,
+      endpointUrl: `http://127.0.0.1:${port ?? this.mcpStatus.port}/mcp`,
+    };
+    return { ...this.mcpStatus };
+  }
+
+  async rotateMcpToken(): Promise<McpServerStatus> {
+    this.mcpStatus = {
+      ...this.mcpStatus,
+      tokenPreview: `wp_${Math.random().toString(16).slice(2, 4)}••••••••${Math.random().toString(16).slice(2, 4)}`,
+    };
+    return { ...this.mcpStatus };
   }
 }

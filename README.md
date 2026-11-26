@@ -16,6 +16,8 @@ Aplicativo híbrido de alta performance para Windows 10/11 (**Tauri v2 + Rust**)
   - **Módulo C (`translator.rs`):** `knowledge_base.json` embutido via `include_str!` com fallback e suporte a override externo (limite de 2 MiB).
   - **Módulo D (`correlator.rs`):** Correlação bidirecional na janela `[T - 15s, T + 5s]` entre eventos Windows, snapshots persistidos e Ring Buffer.
   - **Servidor LAN (`server.rs`) & Tray (`tray.rs`):** Axum HTTP/WebSocket opcional em LAN com PIN de 6 dígitos (constant-time `subtle`), tickets WebSocket de uso único, rate-limiting global/por IP, headers de segurança, System Tray e notificações toast nativas.
+  - **IA Híbrida, MCP & Executor Assistido (`ai.rs`, `mcp.rs`, `executor.rs`, `sanitizer.rs`, `secrets.rs`):** Diagnóstico inteligente via Proxy Cloudflare gratuito, BYOK Gemini (salvo no Windows Credential Manager) ou Ollama auto-detectado em `127.0.0.1:11434`, com redação automática de PII, servidor MCP loopback (`127.0.0.1:8421` + bridge não-elevado `crates/sentinel-mcp`) e execução PowerShell/CMD exclusivamente após aprovação humana na interface Desktop.
+- **Proxy Nuvem (`proxy-worker/`):** Cloudflare Worker `winpulse-ai-proxy` com *System Prompt* travado, schema estrito e rate limit nativo gratuito.
 - **WebAssembly (`crates/sentinel-wasm/`):**
   - Downsampling **LTTB (Largest-Triangle-Three-Buckets)** para sparklines a 60fps.
   - Busca instantânea insensível a acentos PT-BR, contagem de facetas e correlação offline.
@@ -83,5 +85,6 @@ bun run tauri:build:all
 
 Saídas geradas em `target/release/`:
 - Executável principal: `target/release/winpulse-sentinel.exe`
-- Instalador NSIS: `target/release/bundle/nsis/WinPulse Sentinel_0.1.0_x64-setup.exe`
-- Instalador MSI: `target/release/bundle/msi/WinPulse Sentinel_0.1.0_x64_pt-BR.msi`
+- Instalador NSIS: `target/release/bundle/nsis/WinPulse Sentinel_0.2.0_x64-setup.exe`
+- Instalador MSI: `target/release/bundle/msi/WinPulse Sentinel_0.2.0_x64_pt-BR.msi`
+- Bridge MCP não-elevado (`stdio`): `cargo build --release -p sentinel-mcp` -> `target/release/winpulse-mcp.exe`

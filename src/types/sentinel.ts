@@ -174,3 +174,127 @@ export interface IncidentFacetCounts {
   byCategory: Record<string, number>;
   bySeverity: Record<string, number>;
 }
+
+export type AiProviderKind = "cloud_proxy" | "gemini_byok" | "ollama_local";
+
+export interface AiSettings {
+  provider: AiProviderKind;
+  ollamaUrl: string;
+  ollamaModel: string;
+  hasByokKey: boolean;
+  maskedByokKey: string | null;
+  proxyUrl: string;
+}
+
+export interface SaveAiSettingsInput {
+  provider: AiProviderKind;
+  ollamaUrl?: string;
+  ollamaModel?: string;
+}
+
+export interface OllamaProbeResult {
+  available: boolean;
+  baseUrl: string;
+  models: string[];
+  selectedModel: string | null;
+  error: string | null;
+}
+
+export type CommandShell = "powershell" | "cmd";
+export type CommandRiskLevel = "read_only" | "moderate";
+export type CommandSource = "ai" | "catalog" | "mcp";
+export type CommandAuditStatus =
+  | "pending"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "rejected"
+  | "cancelled"
+  | "timed_out";
+
+export interface ProposedCommand {
+  label: string;
+  shell: CommandShell;
+  command: string;
+  rationale: string;
+  requiresAdmin: boolean;
+  riskLevel: CommandRiskLevel;
+}
+
+export interface AiDiagnosisResponse {
+  summary: string;
+  rootCause: string;
+  confidence: "high" | "medium" | "low" | string;
+  steps: string[];
+  proposedCommands: ProposedCommand[];
+  warnings: string[];
+  modelUsed: string;
+  providerUsed: string;
+}
+
+export interface DiagnoseRequest {
+  incidentSummary: string;
+  eventId: number | null;
+  providerName: string | null;
+  channel: string | null;
+  sanitizedXml: string | null;
+  telemetryContext: string | null;
+  executionFeedback: string | null;
+}
+
+export interface StagedCommandTicket {
+  approvalId: string;
+  source: CommandSource;
+  shell: CommandShell;
+  command: string;
+  rationale: string;
+  riskLevel: CommandRiskLevel;
+  requiresAdmin: boolean;
+  createdAtMs: number;
+  expiresAtMs: number;
+}
+
+export interface CommandExecutionResult {
+  approvalId: string;
+  status: CommandAuditStatus;
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  durationMs: number;
+  truncated: boolean;
+}
+
+export interface CommandAuditEntry {
+  id: number;
+  approvalId: string;
+  source: CommandSource;
+  shell: CommandShell;
+  command: string;
+  rationale: string;
+  riskLevel: CommandRiskLevel;
+  requiresAdmin: boolean;
+  status: CommandAuditStatus;
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  durationMs: number | null;
+  createdAtMs: number;
+  completedAtMs: number | null;
+}
+
+export interface CommandOutputEvent {
+  approvalId: string;
+  stream: string;
+  chunk: string;
+  finished: boolean;
+  exitCode: number | null;
+  status: CommandAuditStatus;
+}
+
+export interface McpServerStatus {
+  enabled: boolean;
+  port: number;
+  endpointUrl: string;
+  tokenPreview: string;
+  stdioBinaryName: string;
+}

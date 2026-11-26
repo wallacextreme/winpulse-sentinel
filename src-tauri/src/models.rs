@@ -291,3 +291,271 @@ pub enum WsEnvelope {
     WindowsEvent(WindowsEventRecord),
     Status(CollectorStatus),
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AiProviderKind {
+    CloudProxy,
+    GeminiByok,
+    OllamaLocal,
+}
+
+impl AiProviderKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::CloudProxy => "cloud_proxy",
+            Self::GeminiByok => "gemini_byok",
+            Self::OllamaLocal => "ollama_local",
+        }
+    }
+
+    pub fn from_str_lossy(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "gemini_byok" => Self::GeminiByok,
+            "ollama_local" => Self::OllamaLocal,
+            _ => Self::CloudProxy,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiSettings {
+    pub provider: AiProviderKind,
+    pub ollama_url: String,
+    pub ollama_model: String,
+    pub has_byok_key: bool,
+    pub masked_byok_key: Option<String>,
+    pub proxy_url: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveAiSettingsInput {
+    pub provider: AiProviderKind,
+    pub ollama_url: Option<String>,
+    pub ollama_model: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OllamaProbeResult {
+    pub available: bool,
+    pub base_url: String,
+    pub models: Vec<String>,
+    pub selected_model: Option<String>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CommandShell {
+    Powershell,
+    Cmd,
+}
+
+impl CommandShell {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Powershell => "powershell",
+            Self::Cmd => "cmd",
+        }
+    }
+
+    pub fn from_str_lossy(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "cmd" => Self::Cmd,
+            _ => Self::Powershell,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CommandRiskLevel {
+    ReadOnly,
+    Moderate,
+}
+
+impl CommandRiskLevel {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ReadOnly => "read_only",
+            Self::Moderate => "moderate",
+        }
+    }
+
+    pub fn from_str_lossy(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "moderate" => Self::Moderate,
+            _ => Self::ReadOnly,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CommandSource {
+    Ai,
+    Catalog,
+    Mcp,
+}
+
+impl CommandSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Ai => "ai",
+            Self::Catalog => "catalog",
+            Self::Mcp => "mcp",
+        }
+    }
+
+    pub fn from_str_lossy(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "catalog" => Self::Catalog,
+            "mcp" => Self::Mcp,
+            _ => Self::Ai,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CommandAuditStatus {
+    Pending,
+    Running,
+    Succeeded,
+    Failed,
+    Rejected,
+    Cancelled,
+    TimedOut,
+}
+
+impl CommandAuditStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Running => "running",
+            Self::Succeeded => "succeeded",
+            Self::Failed => "failed",
+            Self::Rejected => "rejected",
+            Self::Cancelled => "cancelled",
+            Self::TimedOut => "timed_out",
+        }
+    }
+
+    pub fn from_str_lossy(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "running" => Self::Running,
+            "succeeded" => Self::Succeeded,
+            "failed" => Self::Failed,
+            "rejected" => Self::Rejected,
+            "cancelled" => Self::Cancelled,
+            "timed_out" => Self::TimedOut,
+            _ => Self::Pending,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProposedCommand {
+    pub label: String,
+    pub shell: CommandShell,
+    pub command: String,
+    pub rationale: String,
+    pub requires_admin: bool,
+    pub risk_level: CommandRiskLevel,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiDiagnosisResponse {
+    pub summary: String,
+    pub root_cause: String,
+    pub confidence: String,
+    pub steps: Vec<String>,
+    pub proposed_commands: Vec<ProposedCommand>,
+    pub warnings: Vec<String>,
+    pub model_used: String,
+    pub provider_used: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagnoseRequest {
+    pub incident_summary: String,
+    pub event_id: Option<u32>,
+    pub provider_name: Option<String>,
+    pub channel: Option<String>,
+    pub sanitized_xml: Option<String>,
+    pub telemetry_context: Option<String>,
+    pub execution_feedback: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StagedCommandTicket {
+    pub approval_id: String,
+    pub source: CommandSource,
+    pub shell: CommandShell,
+    pub command: String,
+    pub rationale: String,
+    pub risk_level: CommandRiskLevel,
+    pub requires_admin: bool,
+    pub created_at_ms: i64,
+    pub expires_at_ms: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommandExecutionResult {
+    pub approval_id: String,
+    pub status: CommandAuditStatus,
+    pub exit_code: Option<i32>,
+    pub stdout: String,
+    pub stderr: String,
+    pub duration_ms: i64,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommandAuditEntry {
+    pub id: i64,
+    pub approval_id: String,
+    pub source: CommandSource,
+    pub shell: CommandShell,
+    pub command: String,
+    pub rationale: String,
+    pub risk_level: CommandRiskLevel,
+    pub requires_admin: bool,
+    pub status: CommandAuditStatus,
+    pub exit_code: Option<i32>,
+    pub stdout: String,
+    pub stderr: String,
+    pub duration_ms: Option<i64>,
+    pub created_at_ms: i64,
+    pub completed_at_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommandOutputEvent {
+    pub approval_id: String,
+    pub stream: String,
+    pub chunk: String,
+    pub finished: bool,
+    pub exit_code: Option<i32>,
+    pub status: CommandAuditStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServerStatus {
+    pub enabled: bool,
+    pub port: u16,
+    pub endpoint_url: String,
+    pub token_preview: String,
+    pub stdio_binary_name: String,
+}

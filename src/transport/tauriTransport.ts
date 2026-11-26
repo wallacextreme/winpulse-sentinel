@@ -1,12 +1,24 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
+  AiDiagnosisResponse,
+  AiSettings,
   BottleneckSnapshot,
   CollectorStatus,
+  CommandAuditEntry,
+  CommandExecutionResult,
+  CommandOutputEvent,
+  CommandShell,
+  CommandSource,
+  DiagnoseRequest,
   ImportHistoryResult,
   IncidentDetail,
   KnowledgeBaseEntry,
+  McpServerStatus,
+  OllamaProbeResult,
   RemoteServerStatus,
+  SaveAiSettingsInput,
+  StagedCommandTicket,
   TelemetrySample,
   TimelineItem,
   TimelineItemType,
@@ -20,6 +32,7 @@ import type {
 
 export class TauriTransport implements SentinelTransport {
   readonly mode = "tauri" as const;
+  readonly supportsExecution = true;
   private unlisteners: UnlistenFn[] = [];
 
   async connect(handlers: TransportEventHandlers): Promise<void> {
@@ -44,6 +57,12 @@ export class TauriTransport implements SentinelTransport {
       }),
       listen<ImportHistoryResult>("sentinel://history-imported", (event) => {
         handlers.onHistoryImported?.(event.payload);
+      }),
+      listen<StagedCommandTicket>("sentinel://approval-requested", (event) => {
+        handlers.onApprovalRequested?.(event.payload);
+      }),
+      listen<CommandOutputEvent>("sentinel://command-output", (event) => {
+        handlers.onCommandOutput?.(event.payload);
       }),
     ]);
 
@@ -129,5 +148,109 @@ export class TauriTransport implements SentinelTransport {
 
   regenerateRemotePin(): Promise<RemoteServerStatus> {
     return invoke<RemoteServerStatus>("regenerate_remote_pin");
+  }
+
+  getAiSettings(): Promise<AiSettings> {
+    return invoke<AiSettings>("get_ai_settings");
+  }
+
+  saveAiSettings(input: SaveAiSettingsInput): Promise<AiSettings> {
+    return invoke<AiSettings>("save_ai_settings", { input });
+  }
+
+  setByokApiKey(apiKey: string): Promise<AiSettings> {
+    return invoke<AiSettings>("set_byok_api_key", { apiKey });
+  }
+
+  clearByokApiKey(): Promise<AiSettings> {
+    return invoke<AiSettings>("clear_byok_api_key");
+  }
+
+  probeOllama(baseUrl?: string): Promise<OllamaProbeResult> {
+    return invoke<OllamaProbeResult>("probe_ollama", { baseUrl });
+  }
+
+  previewSanitizedIncident(
+    itemType: TimelineItemType,
+    id: number,
+  ): Promise<DiagnoseRequest> {
+    return invoke<DiagnoseRequest>("preview_sanitized_incident", {
+      itemType,
+      id,
+    });
+  }
+
+  analyzeIncidentWithAi(
+    itemType: TimelineItemType,
+    id: number,
+    executionFeedback?: string,
+  ): Promise<AiDiagnosisResponse> {
+    return invoke<AiDiagnosisResponse>("analyze_incident_with_ai", {
+      itemType,
+      id,
+      executionFeedback,
+    });
+  }
+
+  analyzeErrorTextWithAi(
+    errorText: string,
+    executionFeedback?: string,
+  ): Promise<AiDiagnosisResponse> {
+    return invoke<AiDiagnosisResponse>("analyze_error_text_with_ai", {
+      errorText,
+      executionFeedback,
+    });
+  }
+
+  stageCommandExecution(params: {
+    source: CommandSource;
+    shell: CommandShell;
+    command: string;
+    rationale: string;
+    requiresAdmin: boolean;
+  }): Promise<StagedCommandTicket> {
+    return invoke<StagedCommandTicket>("stage_command_execution", {
+      source: params.source,
+      shell: params.shell,
+      command: params.command,
+      rationale: params.rationale,
+      requiresAdmin: params.requiresAdmin,
+    });
+  }
+
+  approveCommandExecution(
+    approvalId: string,
+    expectedCommand: string,
+    timeoutSecs?: number,
+  ): Promise<CommandExecutionResult> {
+    return invoke<CommandExecutionResult>("approve_command_execution", {
+      approvalId,
+      expectedCommand,
+      timeoutSecs,
+    });
+  }
+
+  rejectCommandExecution(approvalId: string): Promise<void> {
+    return invoke<void>("reject_command_execution", { approvalId });
+  }
+
+  cancelCommandExecution(approvalId: string): Promise<boolean> {
+    return invoke<boolean>("cancel_command_execution", { approvalId });
+  }
+
+  getCommandAuditLog(limit = 50): Promise<CommandAuditEntry[]> {
+    return invoke<CommandAuditEntry[]>("get_command_audit_log", { limit });
+  }
+
+  getMcpStatus(): Promise<McpServerStatus> {
+    return invoke<McpServerStatus>("get_mcp_status");
+  }
+
+  toggleMcpServer(enabled: boolean, port?: number): Promise<McpServerStatus> {
+    return invoke<McpServerStatus>("toggle_mcp_server", { enabled, port });
+  }
+
+  rotateMcpToken(): Promise<McpServerStatus> {
+    return invoke<McpServerStatus>("rotate_mcp_token");
   }
 }

@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  Bot,
   Check,
   ChevronDown,
   ChevronRight,
   Copy,
+  Eye,
   Link2,
   Loader2,
+  Play,
   Terminal,
   Wrench,
   X,
@@ -16,7 +19,11 @@ import {
 } from "../data/fixCatalog";
 import { metricLabelPt } from "../transport";
 import type {
+  AiDiagnosisResponse,
   BottleneckSnapshot,
+  CommandShell,
+  CommandSource,
+  DiagnoseRequest,
   IncidentDetail,
   KnowledgeBaseEntry,
   TimelineItem,
@@ -28,6 +35,22 @@ interface DiagnosticDrawerProps {
   knowledgeBase: KnowledgeBaseEntry[];
   loading: boolean;
   error: string | null;
+  supportsExecution: boolean;
+  aiDiagnosis: AiDiagnosisResponse | null;
+  aiBusy: boolean;
+  aiError: string | null;
+  aiQuotaExhausted: boolean;
+  sanitizedPreview: DiagnoseRequest | null;
+  onAnalyzeWithAi: () => Promise<void>;
+  onPreviewSanitized: () => Promise<void>;
+  onOpenAiSettings: () => void;
+  onExecuteCommand: (params: {
+    source: CommandSource;
+    shell: CommandShell;
+    command: string;
+    rationale: string;
+    requiresAdmin: boolean;
+  }) => Promise<void>;
   onClose: () => void;
 }
 
@@ -37,10 +60,21 @@ export function DiagnosticDrawer({
   knowledgeBase,
   loading,
   error,
+  supportsExecution,
+  aiDiagnosis,
+  aiBusy,
+  aiError,
+  aiQuotaExhausted,
+  sanitizedPreview,
+  onAnalyzeWithAi,
+  onPreviewSanitized,
+  onOpenAiSettings,
+  onExecuteCommand,
   onClose,
 }: DiagnosticDrawerProps) {
   const [checkedSteps, setCheckedSteps] = useState<Record<number, boolean>>({});
   const [showRawXml, setShowRawXml] = useState(false);
+  const [showSanitized, setShowSanitized] = useState(false);
   const [copiedXml, setCopiedXml] = useState(false);
   const [copiedCmd, setCopiedCmd] = useState<string | null>(null);
 
@@ -65,6 +99,7 @@ export function DiagnosticDrawer({
   useEffect(() => {
     setCheckedSteps({});
     setShowRawXml(false);
+    setShowSanitized(false);
     setCopiedXml(false);
   }, [item?.uid]);
 
@@ -210,29 +245,187 @@ export function DiagnosticDrawer({
               {smartDiagnosis.commands.length > 0 && (
                 <div className="mt-2.5 flex flex-wrap gap-1.5">
                   {smartDiagnosis.commands.map((cmd) => (
-                    <button
-                      key={cmd.command}
-                      type="button"
-                      onClick={() => {
-                        void navigator.clipboard
-                          .writeText(cmd.command)
-                          .then(() => {
-                            setCopiedCmd(cmd.command);
-                            window.setTimeout(() => setCopiedCmd(null), 1800);
-                          })
-                          .catch(() => {});
-                      }}
-                      className="inline-flex items-center gap-1.5 rounded-md border border-slate-700 bg-[#05080f] px-2 py-1 font-mono text-[11px] text-cyan-200 hover:border-cyan-500/50"
-                    >
-                      <Terminal className="h-3 w-3 text-cyan-400" />
-                      <span>{cmd.command}</span>
-                      {copiedCmd === cmd.command ? (
-                        <Check className="h-3 w-3 text-emerald-400" />
-                      ) : (
-                        <Copy className="h-3 w-3 text-slate-500" />
+                    <div key={cmd.command} className="inline-flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void navigator.clipboard
+                            .writeText(cmd.command)
+                            .then(() => {
+                              setCopiedCmd(cmd.command);
+                              window.setTimeout(() => setCopiedCmd(null), 1800);
+                            })
+                            .catch(() => {});
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-slate-700 bg-[#05080f] px-2 py-1 font-mono text-[11px] text-cyan-200 hover:border-cyan-500/50"
+                      >
+                        <Terminal className="h-3 w-3 text-cyan-400" />
+                        <span>{cmd.command}</span>
+                        {copiedCmd === cmd.command ? (
+                          <Check className="h-3 w-3 text-emerald-400" />
+                        ) : (
+                          <Copy className="h-3 w-3 text-slate-500" />
+                        )}
+                      </button>
+                      {supportsExecution && (
+                        <button
+                          type="button"
+                          data-testid="drawer-execute-catalog-btn"
+                          onClick={() =>
+                            void onExecuteCommand({
+                              source: "catalog",
+                              shell: cmd.command.trim().startsWith("Get-") ? "powershell" : "cmd",
+                              command: cmd.command,
+                              rationale: cmd.label,
+                              requiresAdmin: Boolean(cmd.requiresAdmin),
+                            })
+                          }
+                          className="inline-flex items-center gap-1 rounded-md border border-emerald-500/40 bg-emerald-500/15 px-2 py-1 text-[11px] font-semibold text-emerald-200 hover:bg-emerald-500/25"
+                        >
+                          <Play className="h-3 w-3" />
+                          Executar
+                        </button>
                       )}
-                    </button>
+                    </div>
                   ))}
+                </div>
+              )}
+            </section>
+          )}
+
+          {supportsExecution && (
+            <section
+              data-testid="drawer-ai-section"
+              className="rounded-xl border border-cyan-500/35 bg-[#070d1a] p-3.5"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Bot className="h-4 w-4 text-cyan-400" />
+                  <span className="text-xs font-semibold uppercase tracking-wider text-cyan-200">
+                    Diagnóstico Assistido por IA
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    data-testid="preview-sanitized-btn"
+                    onClick={() => {
+                      const next = !showSanitized;
+                      setShowSanitized(next);
+                      if (next && !sanitizedPreview) {
+                        void onPreviewSanitized();
+                      }
+                    }}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-300 hover:bg-slate-800"
+                  >
+                    <Eye className="h-3 w-3" />
+                    {showSanitized ? "Ocultar preview" : "Ver dados sanitizados"}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="analyze-incident-ai-btn"
+                    disabled={aiBusy}
+                    onClick={() => void onAnalyzeWithAi()}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/50 bg-cyan-500/20 px-3 py-1 text-xs font-semibold text-cyan-100 hover:bg-cyan-500/30 disabled:opacity-50"
+                  >
+                    {aiBusy ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Bot className="h-3.5 w-3.5" />
+                    )}
+                    {aiBusy ? "Analisando..." : "Analisar com IA"}
+                  </button>
+                </div>
+              </div>
+
+              {showSanitized && sanitizedPreview && (
+                <pre className="mt-2.5 max-h-36 overflow-auto rounded-lg border border-slate-800 bg-[#04070d] p-2.5 font-mono text-[10px] text-slate-300">
+                  {JSON.stringify(sanitizedPreview, null, 2)}
+                </pre>
+              )}
+
+              {aiError && (
+                <div className="mt-3 rounded-lg border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-200">
+                  <p>{aiError}</p>
+                  {aiQuotaExhausted && (
+                    <button
+                      type="button"
+                      onClick={onOpenAiSettings}
+                      className="mt-2 rounded border border-cyan-500/40 bg-cyan-500/15 px-2.5 py-1 font-semibold text-cyan-200 hover:bg-cyan-500/25"
+                    >
+                      Configurar Minha Chave (BYOK) ou Ollama
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {aiDiagnosis && (
+                <div data-testid="drawer-ai-result" className="mt-3 space-y-3 text-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">
+                    <span>
+                      Modelo: <code className="text-cyan-300">{aiDiagnosis.modelUsed}</code>
+                    </span>
+                    <span className="rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 uppercase">
+                      Confiança: {aiDiagnosis.confidence}
+                    </span>
+                  </div>
+                  <p className="text-sm font-medium text-slate-100">{aiDiagnosis.summary}</p>
+                  <p className="text-xs leading-relaxed text-slate-300">
+                    <strong className="text-slate-200">Causa provável:</strong>{" "}
+                    {aiDiagnosis.rootCause}
+                  </p>
+                  {aiDiagnosis.steps.length > 0 && (
+                    <ol className="list-decimal space-y-1 pl-4 text-xs text-slate-300">
+                      {aiDiagnosis.steps.map((st, idx) => (
+                        <li key={idx}>{st}</li>
+                      ))}
+                    </ol>
+                  )}
+                  {aiDiagnosis.warnings.length > 0 && (
+                    <div className="rounded-lg border border-amber-500/35 bg-amber-500/10 p-2 text-[11px] text-amber-200">
+                      {aiDiagnosis.warnings.map((w, idx) => (
+                        <p key={idx}>{w}</p>
+                      ))}
+                    </div>
+                  )}
+                  {aiDiagnosis.proposedCommands.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-300">
+                        Comandos Sugeridos (Execução com Aprovação)
+                      </p>
+                      {aiDiagnosis.proposedCommands.map((cmd, idx) => (
+                        <div
+                          key={`${cmd.command}-${idx}`}
+                          className="rounded-lg border border-slate-800 bg-[#05080f] p-2.5"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-medium text-slate-200">{cmd.label}</span>
+                            <button
+                              type="button"
+                              data-testid="execute-ai-cmd-btn"
+                              onClick={() =>
+                                void onExecuteCommand({
+                                  source: "ai",
+                                  shell: cmd.shell,
+                                  command: cmd.command,
+                                  rationale: cmd.rationale,
+                                  requiresAdmin: cmd.requiresAdmin,
+                                })
+                              }
+                              className="inline-flex items-center gap-1 rounded border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold text-emerald-200 hover:bg-emerald-500/25"
+                            >
+                              <Play className="h-3 w-3" />
+                              Executar
+                            </button>
+                          </div>
+                          <p className="mt-1 text-[11px] text-slate-400">{cmd.rationale}</p>
+                          <pre className="mt-1.5 overflow-x-auto font-mono text-[11px] text-cyan-300">
+                            {cmd.command}
+                          </pre>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </section>

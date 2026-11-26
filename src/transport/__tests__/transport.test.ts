@@ -6,6 +6,8 @@ import {
   timelineItemFromEvent,
   timelineItemFromSnapshot,
 } from "../types";
+import { DemoTransport } from "../demoTransport";
+import { PwaWebSocketTransport } from "../pwaTransport";
 
 describe("transport type guards and mappers", () => {
   it("validates well-formed WsEnvelope payloads and rejects invalid ones", () => {
@@ -100,5 +102,40 @@ describe("transport type guards and mappers", () => {
     expect(snapItem.category).toBe("Memória RAM");
     expect(snapItem.providerName).toBe("chrome.exe");
     expect(snapItem.title).toContain("94.2%");
+  });
+
+  it("blocks execution on PwaWebSocketTransport and supports AI/approval flow in DemoTransport", async () => {
+    const pwa = new PwaWebSocketTransport();
+    expect(pwa.supportsExecution).toBe(false);
+    await expect(
+      pwa.stageCommandExecution({
+        source: "ai",
+        shell: "cmd",
+        command: "sfc /scannow",
+        rationale: "teste",
+        requiresAdmin: true,
+      }),
+    ).rejects.toThrow();
+
+    const demo = new DemoTransport();
+    expect(demo.supportsExecution).toBe(true);
+    const diag = await demo.analyzeErrorTextWithAi("Event ID 1014 DNS");
+    expect(diag.proposedCommands.length).toBeGreaterThan(0);
+
+    const ticket = await demo.stageCommandExecution({
+      source: "ai",
+      shell: "cmd",
+      command: "ipconfig /flushdns",
+      rationale: "Limpar DNS",
+      requiresAdmin: false,
+    });
+    const res = await demo.approveCommandExecution(
+      ticket.approvalId,
+      ticket.command,
+    );
+    expect(res.status).toBe("succeeded");
+    expect(res.exitCode).toBe(0);
+    const audit = await demo.getCommandAuditLog(10);
+    expect(audit[0]?.approvalId).toBe(ticket.approvalId);
   });
 });

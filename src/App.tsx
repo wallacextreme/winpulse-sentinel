@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Cpu, HardDrive, MemoryStick, Network } from "lucide-react";
+import { AiSettingsModal } from "./components/AiSettingsModal";
 import { AlertToastStack } from "./components/AlertToastStack";
+import { CommandApprovalModal } from "./components/CommandApprovalModal";
 import { DiagnosticDrawer } from "./components/DiagnosticDrawer";
 import { FixGuidePanel } from "./components/FixGuidePanel";
 import { MetricCard } from "./components/MetricCard";
@@ -69,6 +71,8 @@ export default function App() {
         activeTab={activeTab}
         onSelectTab={setActiveTab}
         mode={store.mode}
+        supportsExecution={store.supportsExecution}
+        aiProvider={store.aiSettings?.provider}
         wasmReady={store.wasmReady}
         connectionState={store.connectionState}
         collectorStatus={store.collectorStatus}
@@ -77,6 +81,7 @@ export default function App() {
           void store.togglePause();
         }}
         onOpenRemoteModal={() => store.setRemoteModalOpen(true)}
+        onOpenAiModal={() => store.setAiModalOpen(true)}
         onRefresh={() => {
           void store.refresh();
         }}
@@ -84,7 +89,15 @@ export default function App() {
 
       <main className="mx-auto max-w-7xl space-y-5 px-4 py-5 sm:px-6">
         {activeTab === "fix-guide" ? (
-          <FixGuidePanel knowledgeBase={store.knowledgeBase} />
+          <FixGuidePanel
+            knowledgeBase={store.knowledgeBase}
+            supportsExecution={store.supportsExecution}
+            onAnalyzeTextWithAi={store.analyzeErrorText}
+            onOpenAiSettings={() => store.setAiModalOpen(true)}
+            onExecuteCommand={async (params) => {
+              await store.requestCommandExecution(params);
+            }}
+          />
         ) : (
           <>
             <section
@@ -209,7 +222,69 @@ export default function App() {
         knowledgeBase={store.knowledgeBase}
         loading={store.detailLoading}
         error={store.detailError}
+        supportsExecution={store.supportsExecution}
+        aiDiagnosis={store.aiDiagnosis}
+        aiBusy={store.aiBusy}
+        aiError={store.aiError}
+        aiQuotaExhausted={store.aiQuotaExhausted}
+        sanitizedPreview={store.sanitizedPreview}
+        onAnalyzeWithAi={async () => {
+          await store.analyzeSelectedIncident();
+        }}
+        onPreviewSanitized={async () => {
+          if (store.selectedItem) {
+            await store.loadSanitizedPreview(
+              store.selectedItem.itemType,
+              store.selectedItem.sourceId,
+            );
+          }
+        }}
+        onOpenAiSettings={() => store.setAiModalOpen(true)}
+        onExecuteCommand={async (params) => {
+          await store.requestCommandExecution(params);
+        }}
         onClose={store.closeDrawer}
+      />
+
+      <AiSettingsModal
+        open={store.aiModalOpen}
+        supportsExecution={store.supportsExecution}
+        aiSettings={store.aiSettings}
+        ollamaProbe={store.ollamaProbe}
+        mcpStatus={store.mcpStatus}
+        auditLog={store.auditLog}
+        onClose={() => store.setAiModalOpen(false)}
+        onRefresh={store.refreshAiContext}
+        onSaveSettings={store.saveAiSettings}
+        onSaveByokKey={store.saveByokApiKey}
+        onClearByokKey={store.clearByokApiKey}
+        onProbeOllama={store.refreshOllamaProbe}
+        onToggleMcp={store.toggleMcpServer}
+        onRotateMcpToken={store.rotateMcpToken}
+      />
+
+      <CommandApprovalModal
+        ticket={store.activeTicket}
+        status={store.commandStatus}
+        output={store.commandOutput}
+        busy={store.commandBusy}
+        result={store.commandResult}
+        error={store.commandError}
+        isElevated={store.collectorStatus?.isElevated ?? false}
+        onApprove={async () => {
+          await store.approveActiveCommand();
+        }}
+        onReject={store.rejectActiveCommand}
+        onCancelRunning={store.cancelActiveCommand}
+        onClose={store.closeCommandModal}
+        onSendOutputToAi={
+          store.selectedItem
+            ? (feedback) => {
+                store.closeCommandModal();
+                void store.analyzeSelectedIncident(feedback);
+              }
+            : undefined
+        }
       />
 
       <RemoteAccessModal

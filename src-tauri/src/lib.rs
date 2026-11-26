@@ -1,9 +1,14 @@
+pub mod ai;
 pub mod commands;
 pub mod correlator;
 pub mod db;
 pub mod error;
 pub mod eventlog;
+pub mod executor;
+pub mod mcp;
 pub mod models;
+pub mod sanitizer;
+pub mod secrets;
 pub mod server;
 pub mod telemetry;
 pub mod translator;
@@ -22,7 +27,10 @@ use tracing_subscriber::EnvFilter;
 use commands::AppState;
 use db::Database;
 use eventlog::{import_historical_events, is_process_elevated, spawn_eventlog_watcher, EventLogWatcher};
+use executor::ExecutionCoordinator;
+use mcp::{ApprovalCallback, McpServerController};
 use models::{HealthStatus, Severity, WsEnvelope};
+use secrets::default_secret_store;
 use server::{RemoteServerController, StatusProvider};
 use telemetry::{new_shared_ring_buffer, spawn_telemetry_loop};
 use translator::KnowledgeBase;
@@ -121,9 +129,47 @@ pub fn run() -> Result<(), tauri::Error> {
                 Arc::clone(&ring_buffer),
                 kb.clone(),
                 ws_tx.clone(),
-                status_provider,
+                Arc::clone(&status_provider),
                 static_dist,
             )));
+
+            let executor = ExecutionCoordinator::new(db.clone());
+            let secret_store = default_secret_store();
+            let app_data_dir = app.path().app_data_dir().ok();
+            let approval_handle = app.handle().clone();
+            let on_approval_requested: ApprovalCallback = Arc::new(move |ticket| {
+                let _ = approval_handle.emit("sentinel://approval-requested", &ticket);
+            });
+            let mcp_server = Arc::new(Mutex::new(McpServerController::new(
+                db.clone(),
+                Arc::clone(&ring_buffer),
+                kb.clone(),
+                status_provider,
+                executor.clone(),
+                app_data_dir,
+                on_approval_requested,
+            )));
+
+            let mcp_auto_enabled = db
+                .get_setting("mcp_enabled")
+                .ok()
+                .flatten()
+                .map(|v| v != "false")
+                .unwrap_or(true);
+            let mcp_saved_port = db
+                .get_setting("mcp_port")
+                .ok()
+                .flatten()
+                .and_then(|v| v.parse::<u16>().ok());
+            if mcp_auto_enabled {
+                let mcp_boot = Arc::clone(&mcp_server);
+                tauri::async_runtime::spawn(async move {
+                    let mut controller = mcp_boot.lock().await;
+                    if let Err(err) = controller.start(mcp_saved_port).await {
+                        tracing::warn!(error = %err, "Failed to auto-start MCP loopback server");
+                    }
+                });
+            }
 
             app.manage(AppState {
                 db: db.clone(),
@@ -135,6 +181,9 @@ pub fn run() -> Result<(), tauri::Error> {
                 is_elevated,
                 ws_tx: ws_tx.clone(),
                 remote_server,
+                executor,
+                secret_store,
+                mcp_server,
             });
 
             // Forward telemetry broadcasts to Tauri frontend events
@@ -258,6 +307,22 @@ pub fn run() -> Result<(), tauri::Error> {
             commands::regenerate_remote_pin,
             commands::import_windows_history,
             commands::get_knowledge_base,
+            commands::get_ai_settings,
+            commands::save_ai_settings,
+            commands::set_byok_api_key,
+            commands::clear_byok_api_key,
+            commands::probe_ollama,
+            commands::preview_sanitized_incident,
+            commands::analyze_incident_with_ai,
+            commands::analyze_error_text_with_ai,
+            commands::stage_command_execution,
+            commands::approve_command_execution,
+            commands::reject_command_execution,
+            commands::cancel_command_execution,
+            commands::get_command_audit_log,
+            commands::get_mcp_status,
+            commands::toggle_mcp_server,
+            commands::rotate_mcp_token,
         ])
         .run(tauri::generate_context!())
 }

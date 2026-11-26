@@ -1,10 +1,21 @@
 import type {
+  AiDiagnosisResponse,
+  AiSettings,
   BottleneckSnapshot,
   CollectorStatus,
+  CommandAuditEntry,
+  CommandExecutionResult,
+  CommandShell,
+  CommandSource,
+  DiagnoseRequest,
   ImportHistoryResult,
   IncidentDetail,
   KnowledgeBaseEntry,
+  McpServerStatus,
+  OllamaProbeResult,
   RemoteServerStatus,
+  SaveAiSettingsInput,
+  StagedCommandTicket,
   TelemetrySample,
   TimelineItem,
   TimelineItemType,
@@ -108,6 +119,7 @@ function toWebSocketUrl(httpBase: string, ticket: string): string {
 
 export class PwaWebSocketTransport implements SentinelTransport {
   readonly mode = "pwa" as const;
+  readonly supportsExecution = false;
   private handlers: TransportEventHandlers | null = null;
   private ws: WebSocket | null = null;
   private reconnectTimer: number | null = null;
@@ -543,5 +555,100 @@ export class PwaWebSocketTransport implements SentinelTransport {
     throw new Error(
       "A geração de um novo PIN só está disponível no aplicativo Desktop Windows.",
     );
+  }
+
+  async getAiSettings(): Promise<AiSettings> {
+    return {
+      provider: "cloud_proxy",
+      ollamaUrl: "http://127.0.0.1:11434",
+      ollamaModel: "",
+      hasByokKey: false,
+      maskedByokKey: null,
+      proxyUrl: "https://winpulse-ai-proxy.wallacedepaulosoares.workers.dev",
+    };
+  }
+
+  async saveAiSettings(_input: SaveAiSettingsInput): Promise<AiSettings> {
+    throw new Error("Configurações de IA estão disponíveis apenas no Desktop.");
+  }
+
+  async setByokApiKey(_apiKey: string): Promise<AiSettings> {
+    throw new Error("Chaves BYOK só podem ser salvas no Cofre do Windows Desktop.");
+  }
+
+  async clearByokApiKey(): Promise<AiSettings> {
+    throw new Error("Operação disponível apenas no aplicativo Desktop.");
+  }
+
+  async probeOllama(): Promise<OllamaProbeResult> {
+    return {
+      available: false,
+      baseUrl: "http://127.0.0.1:11434",
+      models: [],
+      selectedModel: null,
+      error: "Detecção local disponível apenas no Desktop.",
+    };
+  }
+
+  async previewSanitizedIncident(): Promise<DiagnoseRequest> {
+    throw new Error("Análise de IA disponível apenas no aplicativo Desktop.");
+  }
+
+  async analyzeIncidentWithAi(): Promise<AiDiagnosisResponse> {
+    throw new Error("Análise de IA disponível apenas no aplicativo Desktop.");
+  }
+
+  async analyzeErrorTextWithAi(): Promise<AiDiagnosisResponse> {
+    throw new Error("Análise de IA disponível apenas no aplicativo Desktop.");
+  }
+
+  async stageCommandExecution(_params: {
+    source: CommandSource;
+    shell: CommandShell;
+    command: string;
+    rationale: string;
+    requiresAdmin: boolean;
+  }): Promise<StagedCommandTicket> {
+    throw new Error(
+      "Execução de comandos PowerShell/CMD é bloqueada no modo remoto LAN por segurança.",
+    );
+  }
+
+  async approveCommandExecution(
+    _approvalId: string,
+    _expectedCommand: string,
+    _timeoutSecs?: number,
+  ): Promise<CommandExecutionResult> {
+    throw new Error(
+      "Execução de comandos PowerShell/CMD é bloqueada no modo remoto LAN por segurança.",
+    );
+  }
+
+  async rejectCommandExecution(): Promise<void> {}
+
+  async cancelCommandExecution(): Promise<boolean> {
+    return false;
+  }
+
+  async getCommandAuditLog(): Promise<CommandAuditEntry[]> {
+    return [];
+  }
+
+  async getMcpStatus(): Promise<McpServerStatus> {
+    return {
+      enabled: false,
+      port: 8421,
+      endpointUrl: "http://127.0.0.1:8421/mcp",
+      tokenPreview: "••••••",
+      stdioBinaryName: "winpulse-mcp.exe",
+    };
+  }
+
+  async toggleMcpServer(): Promise<McpServerStatus> {
+    throw new Error("Servidor MCP só pode ser gerenciado no Desktop.");
+  }
+
+  async rotateMcpToken(): Promise<McpServerStatus> {
+    throw new Error("Rotação de token MCP só está disponível no Desktop.");
   }
 }

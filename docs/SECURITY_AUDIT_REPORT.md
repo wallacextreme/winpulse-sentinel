@@ -47,4 +47,14 @@
 - **Achados Críticos Abertos:** `0`
 - **Achados Altos Abertos:** `0`
 - **Achados Médios/Baixos Abertos:** `0`
-- **Verificação Automatizada:** Testes de regressão em `src-tauri/src/server.rs`, `commands.rs` e E2E Playwright (`e2e/pwa.spec.ts`) validam origem CORS, tickets WebSocket de uso único, rate-limiting global/por IP, headers de segurança, path traversal e fluxo completo PWA.
+- **Verificação Automatizada:** Testes de regressão em `src-tauri/src/server.rs`, `commands.rs`, `ai.rs`, `executor.rs`, `mcp.rs`, `sanitizer.rs`, `secrets.rs`, `proxy-worker/` e E2E Playwright (`e2e/pwa.spec.ts`) validam origem CORS, tickets WebSocket de uso único, rate-limiting, headers de segurança, redação PII, bloqueio SSRF/denylist, isolamento LAN read-only e fluxo completo PWA/Demo.
+
+---
+
+## 5. Extensão: Motor de IA Híbrida, Servidor MCP & Executor Assistido
+
+* **Proxy Nuvem Sem Segredos no Binário (`proxy-worker/`):** O executável embute apenas a URL pública do Cloudflare Worker (`https://winpulse-ai-proxy.wallacedepaulosoares.workers.dev`); a chave `GEMINI_API_KEY` reside exclusivamente em *Secret* criptografado na Cloudflare. O Worker impõe teto de 16 KiB, validação estrita de schema, *System Prompt* imutável no servidor, rate limiting por IP e filtro anti-comandos perigosos.
+* **Cofre Nativo & Sanitização (`secrets.rs`, `sanitizer.rs`):** Chaves BYOK do usuário são gravadas exclusivamente no Windows Credential Manager (`CredWriteW`/`CredReadW`) e nunca retornam ao WebView. Caminhos `C:\Users\*`, nomes `<Computer>`, SIDs (`S-1-5-*`), e-mails, IPs privados e tokens são redigidos antes de qualquer chamada externa ou resposta MCP.
+* **Anti-SSRF & CSP Preservada (`ai.rs`, `tauri.conf.json`):** Todas as requisições de IA partem do backend Rust (`reqwest` com `redirect::Policy::none()`), mantendo `tauri.conf.json` com CSP estrita e sem `tauri-plugin-shell`. URLs do Ollama são restritas estritamente a `127.0.0.1` / `localhost`.
+* **Executor Human-in-the-Loop (`executor.rs`):** Nenhuma ação sugerida por IA ou MCP executa automaticamente. O fluxo exige ticket de 2 fases (TTL 5 min, vínculo com comando literal), `CommandSafetyPolicy` bloqueando vetores de risco (`-EncodedCommand`, `iex`, `Invoke-WebRequest`, `certutil`, `format`, `vssadmin`, etc.), clique humano explícito no modal Desktop e gravação integral em `command_audit_log`. O servidor PWA LAN (`server.rs`) permanece 100% somente-leitura.
+* **MCP Loopback & Bridge Não-Elevado (`mcp.rs`, `crates/sentinel-mcp`):** Endpoint JSON-RPC 2.0 vinculado estritamente a `127.0.0.1:8421` com Bearer Token constante (`subtle::ConstantTimeEq`), acompanhado do binário não-elevado `winpulse-mcp.exe` para compatibilidade com clientes MCP `stdio` sem bypass UAC.
