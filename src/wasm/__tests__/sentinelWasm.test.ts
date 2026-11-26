@@ -1,5 +1,6 @@
 /// <reference types="bun" />
 import { beforeAll, describe, expect, it } from "bun:test";
+import pkg from "../../../package.json";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { TimelineItem } from "../../types/sentinel";
@@ -70,7 +71,7 @@ function makeSnapshotItem(
 
 describe("sentinel-wasm", () => {
   it("exposes crate version", () => {
-    expect(getWasmVersion()).toBe("0.1.0");
+    expect(getWasmVersion()).toBe(pkg.version);
   });
 
   it("downsamples 10,000 points with LTTB while preserving sharp spike", () => {

@@ -3599,7 +3599,7 @@ dependencies = [
 
 [[package]]
 name = "sentinel-mcp"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "reqwest 0.12.28",
  "rusqlite",
@@ -3609,7 +3609,7 @@ dependencies = [
 
 [[package]]
 name = "sentinel-wasm"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "serde",
  "serde-wasm-bindgen",
@@ -5612,7 +5612,7 @@ dependencies = [
 
 [[package]]
 name = "winpulse-sentinel"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "axum",

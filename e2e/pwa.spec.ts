@@ -273,6 +273,18 @@ test.describe("WinPulse Sentinel PWA E2E", () => {
     await page.getByTestId("raw-xml-toggle").click();
     await expect(drawer).toContainText("<EventID>1002</EventID>");
 
+    const drawerBody = page.getByTestId("diagnostic-drawer-body");
+    const scrollInfo = await drawerBody.evaluate((el) => {
+      el.scrollTop = 300;
+      return {
+        scrollHeight: el.scrollHeight,
+        clientHeight: el.clientHeight,
+        scrollTop: el.scrollTop,
+      };
+    });
+    expect(scrollInfo.scrollHeight).toBeGreaterThan(scrollInfo.clientHeight);
+    expect(scrollInfo.scrollTop).toBeGreaterThan(0);
+
     await page.getByTestId("drawer-close").click();
     await expect(drawer).toBeHidden();
 

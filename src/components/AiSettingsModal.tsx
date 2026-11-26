@@ -198,14 +198,14 @@ export function AiSettingsModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs"
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/75 p-4 backdrop-blur-xs"
       role="dialog"
       aria-modal="true"
       aria-labelledby="ai-settings-title"
       data-testid="ai-settings-modal"
     >
-      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-800 bg-[#0b111e] shadow-2xl">
-        <div className="flex items-start justify-between gap-3 border-b border-slate-800 px-5 py-4">
+      <div className="flex max-h-[90vh] min-h-0 w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-800 bg-[#0b111e] shadow-2xl">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-800 px-5 py-4">
           <div className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-cyan-500/35 bg-cyan-500/10 text-cyan-300">
               <Bot className="h-4 w-4" />
@@ -229,7 +229,7 @@ export function AiSettingsModal({
           </button>
         </div>
 
-        <div className="flex gap-1 border-b border-slate-800 px-5 pt-2">
+        <div className="flex shrink-0 gap-1 border-b border-slate-800 px-5 pt-2">
           <button
             type="button"
             onClick={() => setTab("ai")}
@@ -268,7 +268,7 @@ export function AiSettingsModal({
           </button>
         </div>
 
-        <div className="flex-1 space-y-4 overflow-y-auto p-5">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-5">
           {!supportsExecution && (
             <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-200">
               Você está conectado via PWA LAN (modo somente leitura). Configurações de IA, cofre BYOK e servidor MCP ficam disponíveis apenas no aplicativo Desktop Windows.

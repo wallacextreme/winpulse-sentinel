@@ -15,9 +15,12 @@ pub const DEFAULT_AI_PROXY_URL: &str =
     "https://winpulse-ai-proxy.wallacedepaulosoares.workers.dev";
 pub const DEFAULT_OLLAMA_URL: &str = "http://127.0.0.1:11434";
 pub const GEMINI_MODELS: &[&str] = &[
-    "gemini-3.8-flash",
-    "gemini-3.6-flash",
+    "gemini-flash-lite-latest",
+    "gemini-3.1-flash-lite",
     "gemini-flash-latest",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-3.6-flash",
 ];
 
 fn gemini_endpoint(model: &str) -> String {
@@ -296,7 +299,7 @@ async fn call_cloud_proxy(
 
     let resp = client
         .post(url)
-        .header("X-WinPulse-Client", "winpulse-sentinel/0.2.0")
+        .header("X-WinPulse-Client", "winpulse-sentinel/0.2.1")
         .json(req)
         .send()
         .await
@@ -309,8 +312,12 @@ async fn call_cloud_proxy(
     let status = resp.status();
     if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
         let text = resp.text().await.unwrap_or_default();
+        let detail_suffix = serde_json::from_str::<serde_json::Value>(&text)
+            .ok()
+            .and_then(|v| v["detail"].as_str().map(|s| format!(" Detalhe: {s}")))
+            .unwrap_or_default();
         return Err(SentinelError::QuotaExhausted(if text.contains("SHARED_QUOTA_EXHAUSTED") {
-            "Cota gratuita compartilhada temporariamente esgotada. Adicione sua chave Gemini (BYOK) ou conecte ao Ollama local.".to_string()
+            format!("Cota gratuita compartilhada temporariamente esgotada ou indisponível. Adicione sua chave Gemini (BYOK) ou conecte ao Ollama local.{detail_suffix}")
         } else {
             "Limite de requisições atingido no proxy gratuito. Aguarde 1 minuto ou use sua própria chave (BYOK).".to_string()
         }));
@@ -490,7 +497,10 @@ async fn call_gemini_direct_with_fallback(
             })?;
 
         let status = resp.status();
-        if status == reqwest::StatusCode::NOT_FOUND {
+        if status == reqwest::StatusCode::NOT_FOUND
+            || status == reqwest::StatusCode::TOO_MANY_REQUESTS
+            || status == reqwest::StatusCode::SERVICE_UNAVAILABLE
+        {
             last_status = status;
             continue;
         }

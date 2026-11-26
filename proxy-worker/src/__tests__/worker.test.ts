@@ -277,9 +277,70 @@ describe("winpulse-ai-proxy worker", () => {
     );
     expect(res.status).toBe(200);
     expect(calledUrls.length).toBe(2);
-    expect(calledUrls[0]).toContain("gemini-3.8-flash");
-    expect(calledUrls[1]).toContain("gemini-3.6-flash");
+    expect(calledUrls[0]).toContain("gemini-flash-lite-latest:generateContent");
+    expect(calledUrls[1]).toContain("gemini-3.1-flash-lite:generateContent");
     const data = (await res.json()) as { modelUsed: string };
-    expect(data.modelUsed).toBe("gemini-3.6-flash");
+    expect(data.modelUsed).toBe("gemini-3.1-flash-lite");
+  });
+
+  test("discovers available flash model via /v1beta/models when static models return 404 or 429", async () => {
+    const mockFetch: typeof fetch = async (input) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.endsWith("/v1beta/models")) {
+        return new Response(
+          JSON.stringify({
+            models: [
+              {
+                name: "models/gemini-4.0-flash",
+                supportedGenerationMethods: ["generateContent"],
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.includes("gemini-4.0-flash")) {
+        return new Response(
+          JSON.stringify({
+            candidates: [
+              {
+                content: {
+                  parts: [
+                    {
+                      text: JSON.stringify({
+                        summary: "Descoberto OK",
+                        rootCause: "Disco 100%",
+                        confidence: "high",
+                        steps: [],
+                        proposedCommands: [],
+                        warnings: [],
+                      }),
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response("quota 0", { status: 429 });
+    };
+
+    const res = await handleRequest(
+      new Request("https://proxy.test/v1/diagnose", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-WinPulse-Client": "winpulse-sentinel/0.2.0",
+        },
+        body: JSON.stringify({ incidentSummary: "Disco 94%" }),
+      }),
+      TEST_ENV,
+      mockFetch,
+    );
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as { modelUsed: string };
+    expect(data.modelUsed).toBe("gemini-4.0-flash");
   });
 });

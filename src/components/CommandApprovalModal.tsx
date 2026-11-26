@@ -80,14 +80,14 @@ export function CommandApprovalModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs"
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/80 p-4 backdrop-blur-xs"
       role="dialog"
       aria-modal="true"
       aria-labelledby="command-approval-title"
       data-testid="command-approval-modal"
     >
-      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-700/90 bg-[#0b111e] shadow-2xl">
-        <div className="flex items-start justify-between gap-3 border-b border-slate-800 px-5 py-4">
+      <div className="flex max-h-[90vh] min-h-0 w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-700/90 bg-[#0b111e] shadow-2xl">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-800 px-5 py-4">
           <div className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-300">
               <Terminal className="h-4 w-4" />
@@ -116,7 +116,7 @@ export function CommandApprovalModal({
           </button>
         </div>
 
-        <div className="flex-1 space-y-4 overflow-y-auto p-5">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-5">
           <div className="flex flex-wrap items-center gap-2">
             <span
               className={`rounded border px-2 py-0.5 text-[11px] font-semibold uppercase ${

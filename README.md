@@ -85,6 +85,6 @@ bun run tauri:build:all
 
 Saídas geradas em `target/release/`:
 - Executável principal: `target/release/winpulse-sentinel.exe`
-- Instalador NSIS: `target/release/bundle/nsis/WinPulse Sentinel_0.2.0_x64-setup.exe`
-- Instalador MSI: `target/release/bundle/msi/WinPulse Sentinel_0.2.0_x64_pt-BR.msi`
+- Instalador NSIS: `target/release/bundle/nsis/WinPulse Sentinel_0.2.1_x64-setup.exe`
+- Instalador MSI: `target/release/bundle/msi/WinPulse Sentinel_0.2.1_x64_pt-BR.msi`
 - Bridge MCP não-elevado (`stdio`): `cargo build --release -p sentinel-mcp` -> `target/release/winpulse-mcp.exe`

@@ -2,6 +2,12 @@
 
 Todas as mudanças relevantes do **WinPulse Sentinel** são documentadas neste arquivo.
 
+## [0.2.1] - 2026-11-26
+
+### Corrigido
+- **Rolagem no Painel de Diagnóstico e Modais (`DiagnosticDrawer.tsx`, `AiSettingsModal.tsx`, `CommandApprovalModal.tsx`):** Adicionados `min-h-0`, `shrink-0`, `overflow-hidden` e `overscroll-contain` na estrutura Flexbox e barra de rolagem mais contrastada em `index.css` para garantir scroll vertical completo no WebView2.
+- **Descoberta Automática de Modelos Gemini Free Tier (`proxy-worker/`, `ai.rs`):** Priorizado `gemini-flash-lite-latest` e adicionada descoberta automática via `/v1beta/models` com fallback entre modelos em respostas `404`/`429`/`503`, eliminando falsos erros de cota esgotada quando um modelo específico possui limite zero na camada gratuita.
+
 ## [0.2.0] - 2026-11-26
 
 ### Adicionado

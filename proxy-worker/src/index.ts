@@ -42,14 +42,56 @@ export interface AiDiagnosisResponse {
 }
 
 const MAX_BODY_BYTES = 16 * 1024;
-const GEMINI_MODELS = [
-  "gemini-3.8-flash",
-  "gemini-3.6-flash",
+const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
+const STATIC_GEMINI_MODELS = [
+  "gemini-flash-lite-latest",
+  "gemini-3.1-flash-lite",
   "gemini-flash-latest",
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
+  "gemini-3.6-flash",
 ] as const;
 
 function geminiEndpoint(model: string): string {
-  return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+  return `${GEMINI_BASE}/models/${model}:generateContent`;
+}
+
+async function discoverFlashModels(
+  apiKey: string,
+  fetchImpl: typeof fetch,
+): Promise<string[]> {
+  try {
+    const res = await fetchImpl(`${GEMINI_BASE}/models`, {
+      method: "GET",
+      headers: { "x-goog-api-key": apiKey },
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as {
+      models?: Array<{
+        name?: string;
+        supportedGenerationMethods?: string[];
+      }>;
+    };
+    return (data.models ?? [])
+      .filter((m) => {
+        const name = (m.name ?? "").toLowerCase();
+        const methods = m.supportedGenerationMethods ?? [];
+        return (
+          methods.includes("generateContent") &&
+          name.includes("flash") &&
+          !name.includes("tts") &&
+          !name.includes("audio") &&
+          !name.includes("image") &&
+          !name.includes("live") &&
+          !name.includes("robotics") &&
+          !name.includes("computer-use")
+        );
+      })
+      .map((m) => (m.name ?? "").replace(/^models\//, ""))
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
 }
 
 const ALLOWED_REQUEST_KEYS = new Set([
@@ -355,6 +397,24 @@ export async function handleRequest(
     });
   }
 
+  if (request.method === "GET" && url.pathname === "/v1/models") {
+    const clientHeader = request.headers.get("X-WinPulse-Client") ?? "";
+    if (!clientHeader.startsWith("winpulse-sentinel/")) {
+      return jsonResponse(403, {
+        code: "FORBIDDEN_CLIENT",
+        error: "Cabeçalho X-WinPulse-Client obrigatório.",
+      });
+    }
+    if (!env.GEMINI_API_KEY) {
+      return jsonResponse(503, { code: "PROXY_NOT_CONFIGURED", models: [] });
+    }
+    const discovered = await discoverFlashModels(
+      env.GEMINI_API_KEY.trim(),
+      fetchImpl,
+    );
+    return jsonResponse(200, { models: discovered });
+  }
+
   if (request.method !== "POST" || url.pathname !== "/v1/diagnose") {
     return jsonResponse(404, { code: "NOT_FOUND", error: "Rota não encontrada." });
   }
@@ -471,31 +531,64 @@ export async function handleRequest(
     },
   });
 
+  const apiKey = env.GEMINI_API_KEY.trim();
   let geminiRes: Response | null = null;
-  let activeModel: string = GEMINI_MODELS[0];
+  let activeModel: string = STATIC_GEMINI_MODELS[0];
+  let lastErrorText = "";
+  const tried = new Set<string>();
 
-  for (const model of GEMINI_MODELS) {
-    activeModel = model;
-    try {
-      const candidateRes = await fetchImpl(geminiEndpoint(model), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": env.GEMINI_API_KEY.trim(),
-        },
-        body: requestBodyJson,
-      });
-      if (candidateRes.status === 404) {
+  const tryModels = async (models: readonly string[]): Promise<boolean> => {
+    for (const model of models) {
+      if (tried.has(model)) continue;
+      tried.add(model);
+      activeModel = model;
+      try {
+        const candidateRes = await fetchImpl(geminiEndpoint(model), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey,
+          },
+          body: requestBodyJson,
+        });
         geminiRes = candidateRes;
-        continue;
+        if (candidateRes.ok) {
+          return true;
+        }
+        lastErrorText = await candidateRes.text().catch(() => "");
+        if (
+          candidateRes.status === 404 ||
+          candidateRes.status === 429 ||
+          candidateRes.status === 503
+        ) {
+          continue;
+        }
+        return true;
+      } catch {
+        return false;
       }
-      geminiRes = candidateRes;
-      break;
-    } catch {
-      return jsonResponse(502, {
-        code: "UPSTREAM_UNREACHABLE",
-        error: "Falha ao contatar a API do Gemini a partir do proxy.",
-      });
+    }
+    return true;
+  };
+
+  const reachedStatic = await tryModels(STATIC_GEMINI_MODELS);
+  if (!reachedStatic) {
+    return jsonResponse(502, {
+      code: "UPSTREAM_UNREACHABLE",
+      error: "Falha ao contatar a API do Gemini a partir do proxy.",
+    });
+  }
+
+  if (!geminiRes || !geminiRes.ok) {
+    const discovered = await discoverFlashModels(apiKey, fetchImpl);
+    if (discovered.length > 0) {
+      const reachedDiscovered = await tryModels(discovered);
+      if (!reachedDiscovered) {
+        return jsonResponse(502, {
+          code: "UPSTREAM_UNREACHABLE",
+          error: "Falha ao contatar a API do Gemini a partir do proxy.",
+        });
+      }
     }
   }
 
@@ -507,21 +600,29 @@ export async function handleRequest(
   }
 
   if (geminiRes.status === 429 || geminiRes.status === 503) {
+    const safeReason = lastErrorText
+      .replace(/AIza[0-9A-Za-z_-]{10,}/g, "[REDACTED]")
+      .slice(0, 240);
     return jsonResponse(
       429,
       {
         code: "SHARED_QUOTA_EXHAUSTED",
         error:
-          "Cota gratuita compartilhada temporariamente esgotada. Tente novamente em instantes, use sua própria chave Gemini (BYOK) ou conecte ao Ollama local.",
+          "Cota gratuita compartilhada temporariamente esgotada ou indisponível no projeto do proxy. Tente novamente em instantes, use sua própria chave Gemini (BYOK) ou conecte ao Ollama local.",
+        detail: safeReason || undefined,
       },
       { "Retry-After": "60" },
     );
   }
 
   if (!geminiRes.ok) {
+    const safeReason = lastErrorText
+      .replace(/AIza[0-9A-Za-z_-]{10,}/g, "[REDACTED]")
+      .slice(0, 240);
     return jsonResponse(502, {
       code: "UPSTREAM_ERROR",
       error: `Erro do provedor de IA (HTTP ${geminiRes.status}).`,
+      detail: safeReason || undefined,
     });
   }
 

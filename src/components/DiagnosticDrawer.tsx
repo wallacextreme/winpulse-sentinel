@@ -132,7 +132,7 @@ export function DiagnosticDrawer({
   };
 
   return (
-    <div className="fixed inset-0 z-40 flex justify-end bg-black/65 backdrop-blur-xs">
+    <div className="fixed inset-0 z-40 flex justify-end overflow-hidden bg-black/65 backdrop-blur-xs">
       <div
         className="flex-1"
         onClick={onClose}
@@ -143,9 +143,9 @@ export function DiagnosticDrawer({
         aria-modal="true"
         aria-label="Diagnóstico do Incidente"
         data-testid="diagnostic-drawer"
-        className="flex h-full w-full max-w-xl flex-col border-l border-slate-800 bg-[#0b111e] shadow-2xl"
+        className="flex h-full max-h-full min-h-0 w-full max-w-xl flex-col overflow-hidden border-l border-slate-800 bg-[#0b111e] shadow-2xl"
       >
-        <div className="flex items-start justify-between gap-3 border-b border-slate-800 px-5 py-4">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-800 px-5 py-4">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="rounded border border-slate-700 bg-slate-900 px-2 py-0.5 text-[11px] font-medium text-slate-300">
@@ -181,7 +181,11 @@ export function DiagnosticDrawer({
           </button>
         </div>
 
-        <div className="flex-1 space-y-5 overflow-y-auto px-5 py-4">
+        <div
+          data-testid="diagnostic-drawer-body"
+          tabIndex={0}
+          className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-5 py-4 pb-10 focus:outline-none"
+        >
           {loading && (
             <div className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/50 p-3 text-xs text-slate-300">
               <Loader2 className="h-4 w-4 animate-spin text-cyan-400" />
